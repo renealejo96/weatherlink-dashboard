@@ -11,7 +11,7 @@ services:
     env_file:
       - .env
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8080:80"
     volumes:
       # Montar logs para persistencia
       - ./logs:/app/logs
@@ -30,8 +30,8 @@ services:
     container_name: weatherlink_nginx
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "8081:80"
+      - "8443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
