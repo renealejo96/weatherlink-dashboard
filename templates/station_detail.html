@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ station.name }} - Detalle</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@3.0.0/cdn.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .filter-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .navbar-custom {
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .btn-custom {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+        }
+        .btn-custom:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light navbar-custom mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-cloud-sun"></i> WeatherLink Dashboard</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/compare">Comparar Estaciones</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="text-center mb-4">
+            <h1 class="text-white"><i class="fas fa-broadcast-tower"></i> {{ station.name }}</h1>
+            <p class="text-white">ID de Estación: {{ station.station_id }}</p>
+        </div>
+
+        <div class="filter-card">
+            <h4><i class="fas fa-filter"></i> Filtros de Fecha</h4>
+            <div class="row">
+                <div class="col-md-3">
+                    <label class="form-label">Rango Rápido</label>
+                    <select class="form-select" id="quickRange">
+                        <option value="1">Último día</option>
+                        <option value="7" selected>Últimos 7 días</option>
+                        <option value="15">Últimos 15 días</option>
+                        <option value="30">Último mes</option>
+                        <option value="custom">Seleccionar Fechas</option>
+                    </select>
+                </div>
+                <div class="col-md-3" id="startDateContainer" style="display: none;">
+                    <label class="form-label">Fecha Inicio</label>
+                    <input type="date" class="form-control" id="startDate">
+                </div>
+                <div class="col-md-3" id="endDateContainer" style="display: none;">
+                    <label class="form-label">Fecha Fin</label>
+                    <input type="date" class="form-control" id="endDate">
+                </div>
+                <div class="col-md-3" id="updateButtonContainer" style="display: none;">
+                    <label class="form-label">&nbsp;</label>
+                    <button class="btn btn-custom w-100" onclick="loadData()">
+                        <i class="fas fa-sync-alt"></i> Actualizar Gráficos
+                    </button>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button class="btn btn-success w-100" onclick="exportToExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar a Excel
+                    </button>
+                </div>
+                <div class="col-md-9" id="loadingIndicator" style="display: none;">
+                    <div class="alert alert-info mt-4">
+                        <i class="fas fa-spinner fa-spin"></i> Cargando datos...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-thermometer-half text-danger"></i> Temperatura</h5>
+                    <canvas id="tempChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-tint text-primary"></i> Humedad</h5>
+                    <canvas id="humidityChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-wind text-info"></i> Velocidad del Viento</h5>
+                    <canvas id="windChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-cloud-rain text-secondary"></i> Precipitación</h5>
+                    <canvas id="rainChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-sun text-warning"></i> Radiación Solar</h5>
+                    <canvas id="solarChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-line text-success"></i> DPV (Déficit de Presión de Vapor)</h5>
+                    <canvas id="pressureChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const stationKey = '{{ station_key }}';
+        let charts = {};
+
+        // Configurar fechas por defecto
+        const today = new Date();
+        const weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        
+        document.getElementById('endDate').valueAsDate = today;
+        document.getElementById('startDate').valueAsDate = weekAgo;
+
+        // Crear gráficos
+        function createChart(ctx, label, color) {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: label,
+                        data: [],
+                        borderColor: color,
+                        backgroundColor: color + '20',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Fecha/Hora'
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: label
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Inicializar gráficos
+        charts.temp = createChart(document.getElementById('tempChart'), 'Temperatura (°C)', '#dc3545');
+        charts.humidity = createChart(document.getElementById('humidityChart'), 'Humedad (%)', '#0d6efd');
+        charts.wind = createChart(document.getElementById('windChart'), 'Viento (km/h)', '#17a2b8');
+        // Gráfico de lluvia como barras
+        charts.rain = new Chart(document.getElementById('rainChart'), {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Lluvia (mm)',
+                    data: [],
+                    backgroundColor: '#6c757d',
+                    borderColor: '#6c757d',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    x: { display: true, title: { display: true, text: 'Fecha/Hora' } },
+                    y: { display: true, title: { display: true, text: 'Lluvia (mm)' }, beginAtZero: true }
+                }
+            }
+        });
+        charts.solar = createChart(document.getElementById('solarChart'), 'Radiación Solar (W/m²)', '#ffc107');
+        charts.pressure = createChart(document.getElementById('pressureChart'), 'DPV (kPa)', '#28a745');
+
+        // Mostrar/ocultar selectores de fecha
+        document.getElementById('quickRange').addEventListener('change', function() {
+            const value = this.value;
+            const showCustom = value === 'custom';
+            
+            document.getElementById('startDateContainer').style.display = showCustom ? 'block' : 'none';
+            document.getElementById('endDateContainer').style.display = showCustom ? 'block' : 'none';
+            document.getElementById('updateButtonContainer').style.display = showCustom ? 'block' : 'none';
+            
+            // Si no es custom, cargar automáticamente
+            if (!showCustom) {
+                loadData();
+            }
+        });
+
+        // Cargar datos
+        async function loadData() {
+            const quickRange = document.getElementById('quickRange').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            // Mostrar indicador de carga
+            document.getElementById('loadingIndicator').style.display = 'block';
+
+            let url = `/api/historical/${stationKey}?`;
+            
+            if (quickRange === 'custom' && startDate && endDate) {
+                url += `start_date=${startDate}&end_date=${endDate}`;
+            } else if (quickRange !== 'custom') {
+                url += `days=${quickRange}`;
+            } else {
+                document.getElementById('loadingIndicator').style.display = 'none';
+                alert('Por favor seleccione fecha de inicio y fin');
+                return;
+            }
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                const records = data.records || [];
+                
+                // Preparar datos para gráficos
+                const labels = records.map(r => new Date(r.timestamp * 1000).toLocaleString('es-ES', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }));
+                
+                // Convertir unidades a métricas
+                const tempC = records.map(r => r.temperature ? ((r.temperature - 32) * 5 / 9) : null);
+                const windKmh = records.map(r => r.wind_speed ? (r.wind_speed * 1.60934) : null);
+                const rainMm = records.map(r => r.rain ? (r.rain * 25.4) : null);
+                const vpd = records.map(r => {
+                    if (r.temperature && r.humidity) {
+                        const tc = (r.temperature - 32) * 5 / 9;
+                        const vpsat = 0.6108 * Math.exp((17.27 * tc) / (tc + 237.3));
+                        const vpactual = (r.humidity / 100) * vpsat;
+                        return vpsat - vpactual;
+                    }
+                    return null;
+                });
+                
+                // Filtrar solo días con lluvia para el gráfico de precipitación
+                const rainData = records
+                    .map((r, idx) => ({
+                        label: labels[idx],
+                        value: rainMm[idx]
+                    }))
+                    .filter(d => d.value > 0);
+                
+                const rainLabels = rainData.map(d => d.label);
+                const rainValues = rainData.map(d => d.value);
+                
+                // Actualizar cada gráfico
+                updateChart(charts.temp, labels, tempC);
+                updateChart(charts.humidity, labels, records.map(r => r.humidity));
+                updateChart(charts.wind, labels, windKmh);
+                updateChart(charts.rain, rainLabels, rainValues);
+                updateChart(charts.solar, labels, records.map(r => r.solar_radiation));
+                updateChart(charts.pressure, labels, vpd);
+
+                // Ocultar indicador de carga
+                document.getElementById('loadingIndicator').style.display = 'none';
+
+            } catch (error) {
+                document.getElementById('loadingIndicator').style.display = 'none';
+                alert('Error al cargar datos: ' + error.message);
+            }
+        }
+
+        function updateChart(chart, labels, data) {
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = data;
+            chart.update();
+        }
+
+        // Exportar a Excel
+        function exportToExcel() {
+            const quickRange = document.getElementById('quickRange').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            let url = `/api/export/${stationKey}?`;
+            
+            if (quickRange === 'custom' && startDate && endDate) {
+                url += `start_date=${startDate}&end_date=${endDate}`;
+            } else if (quickRange !== 'custom') {
+                url += `days=${quickRange}`;
+            } else {
+                alert('Por favor seleccione fecha de inicio y fin');
+                return;
+            }
+            
+            // Descargar archivo
+            window.location.href = url;
+        }
+
+        // Cargar datos iniciales
+        loadData();
+    </script>
+</body>
+</html>

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comparar Estaciones</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .filter-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .navbar-custom {
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .btn-custom {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+        }
+        .btn-custom:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light navbar-custom mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-cloud-sun"></i> WeatherLink Dashboard</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/compare">Comparar Estaciones</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="text-center mb-4">
+            <h1 class="text-white"><i class="fas fa-balance-scale"></i> Comparación de Estaciones</h1>
+            <p class="text-white">Visualiza y compara datos de las 3 estaciones meteorológicas</p>
+        </div>
+
+        <div class="filter-card">
+            <h4><i class="fas fa-filter"></i> Período de Comparación</h4>
+            <div class="row">
+                <div class="col-md-4">
+                    <label class="form-label">Período</label>
+                    <select class="form-select" id="compareDays">
+                        <option value="1">Último día</option>
+                        <option value="3">Últimos 3 días</option>
+                        <option value="7" selected>Últimos 7 días</option>
+                        <option value="15">Últimos 15 días</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">&nbsp;</label>
+                    <button class="btn btn-custom w-100" onclick="loadCompareData()">
+                        <i class="fas fa-sync-alt"></i> Actualizar Comparación
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-thermometer-half text-danger"></i> Comparación de Temperatura</h5>
+                    <canvas id="tempCompareChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-tint text-primary"></i> Comparación de Humedad</h5>
+                    <canvas id="humidityCompareChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-wind text-info"></i> Comparación de Viento</h5>
+                    <canvas id="windCompareChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-cloud-rain text-secondary"></i> Comparación de Precipitación</h5>
+                    <canvas id="rainCompareChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-12">
+                <div class="chart-container">
+                    <h5><i class="fas fa-sun text-warning"></i> Comparación de Radiación Solar</h5>
+                    <canvas id="solarCompareChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const stationColors = {
+            'finca1': '#dc3545',  // Rojo
+            'finca2': '#0d6efd',  // Azul
+            'finca3': '#28a745'   // Verde
+        };
+
+        let charts = {};
+
+        // Crear gráfico de comparación
+        function createCompareChart(ctx, label, yAxisLabel) {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Fecha/Hora'
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: yAxisLabel
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Inicializar gráficos
+        charts.temp = createCompareChart(document.getElementById('tempCompareChart'), 'Temperatura', 'Temperatura (°C)');
+        charts.humidity = createCompareChart(document.getElementById('humidityCompareChart'), 'Humedad', 'Humedad (%)');
+        charts.wind = createCompareChart(document.getElementById('windCompareChart'), 'Viento', 'Velocidad (km/h)');
+        charts.rain = createCompareChart(document.getElementById('rainCompareChart'), 'Lluvia', 'Precipitación (mm)');
+        charts.solar = createCompareChart(document.getElementById('solarCompareChart'), 'Radiación Solar', 'Radiación (W/m²)');
+
+        // Cargar datos de comparación
+        async function loadCompareData() {
+            const days = document.getElementById('compareDays').value;
+            
+            try {
+                const response = await fetch(`/api/compare?days=${days}`);
+                const data = await response.json();
+
+                // Procesar datos para cada estación
+                const allLabels = new Set();
+                const stationData = {};
+
+                for (const [stationKey, stationInfo] of Object.entries(data)) {
+                    if (stationInfo.error) {
+                        console.error(`Error en ${stationKey}:`, stationInfo.error);
+                        continue;
+                    }
+
+                    const records = stationInfo.data.records || [];
+                    stationData[stationKey] = {
+                        name: stationInfo.name,
+                        records: records
+                    };
+
+                    // Recopilar todas las etiquetas de tiempo
+                    records.forEach(r => {
+                        const label = new Date(r.timestamp * 1000).toLocaleString('es-ES', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit'
+                        });
+                        allLabels.add(label);
+                    });
+                }
+
+                const labels = Array.from(allLabels).sort();
+
+                // Actualizar cada gráfico
+                updateCompareChart(charts.temp, labels, stationData, 'temperature', 'Temperatura');
+                updateCompareChart(charts.humidity, labels, stationData, 'humidity', 'Humedad');
+                updateCompareChart(charts.wind, labels, stationData, 'wind_speed', 'Viento');
+                updateCompareChart(charts.rain, labels, stationData, 'rain', 'Lluvia');
+                updateCompareChart(charts.solar, labels, stationData, 'solar_radiation', 'Radiación Solar');
+
+            } catch (error) {
+                alert('Error al cargar datos de comparación: ' + error.message);
+            }
+        }
+
+        function updateCompareChart(chart, labels, stationData, dataKey, labelPrefix) {
+            chart.data.labels = labels;
+            chart.data.datasets = [];
+
+            for (const [stationKey, info] of Object.entries(stationData)) {
+                const records = info.records;
+                let data = records.map(r => r[dataKey]);
+                
+                // Convertir a unidades métricas según el tipo de dato
+                if (dataKey === 'temperature') {
+                    data = data.map(val => val ? ((val - 32) * 5 / 9) : null);
+                } else if (dataKey === 'wind_speed') {
+                    data = data.map(val => val ? (val * 1.60934) : null);
+                } else if (dataKey === 'rain') {
+                    data = data.map(val => val ? (val * 25.4) : null);
+                }
+                
+                chart.data.datasets.push({
+                    label: info.name,
+                    data: data,
+                    borderColor: stationColors[stationKey],
+                    backgroundColor: stationColors[stationKey] + '20',
+                    tension: 0.4,
+                    fill: false
+                });
+            }
+
+            chart.update();
+        }
+
+        // Actualizar cuando cambia el período
+        document.getElementById('compareDays').addEventListener('change', loadCompareData);
+
+        // Cargar datos iniciales
+        loadCompareData();
+    </script>
+</body>
+</html>

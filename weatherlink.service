@@ -1,0 +1,21 @@
+[Unit]
+Description=WeatherLink Dashboard con Gunicorn
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/weatherlink
+Environment="PATH=/var/www/weatherlink/venv/bin"
+ExecStart=/var/www/weatherlink/venv/bin/gunicorn --config gunicorn_config.py app:app
+
+# Reiniciar automáticamente si falla
+Restart=always
+RestartSec=10
+
+# Logs
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
