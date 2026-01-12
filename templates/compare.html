@@ -88,6 +88,11 @@
                     </button>
                 </div>
             </div>
+            <div id="compareLoading" style="display: none;" class="mt-3">
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-spinner fa-spin"></i> Cargando datos de las estaciones...
+                </div>
+            </div>
         </div>
 
         <div class="row">
@@ -114,8 +119,8 @@
             </div>
             <div class="col-md-6">
                 <div class="chart-container">
-                    <h5><i class="fas fa-cloud-rain text-secondary"></i> Comparación de Precipitación</h5>
-                    <canvas id="rainCompareChart"></canvas>
+                    <h5><i class="fas fa-sun text-warning"></i> Comparación de Radiación Solar</h5>
+                    <canvas id="solarCompareChart"></canvas>
                 </div>
             </div>
         </div>
@@ -123,8 +128,8 @@
         <div class="row">
             <div class="col-md-12">
                 <div class="chart-container">
-                    <h5><i class="fas fa-sun text-warning"></i> Comparación de Radiación Solar</h5>
-                    <canvas id="solarCompareChart"></canvas>
+                    <h5><i class="fas fa-cloud-rain text-secondary"></i> Comparación de Precipitación</h5>
+                    <canvas id="rainCompareChart"></canvas>
                 </div>
             </div>
         </div>
@@ -140,10 +145,10 @@
 
         let charts = {};
 
-        // Crear gráfico de comparación
-        function createCompareChart(ctx, label, yAxisLabel) {
+        // Crear gráfico de comparación (permite tipo línea o barra)
+        function createCompareChart(ctx, label, yAxisLabel, chartType = 'line') {
             return new Chart(ctx, {
-                type: 'line',
+                type: chartType,
                 data: {
                     labels: [],
                     datasets: []
@@ -185,11 +190,12 @@
         charts.temp = createCompareChart(document.getElementById('tempCompareChart'), 'Temperatura', 'Temperatura (°C)');
         charts.humidity = createCompareChart(document.getElementById('humidityCompareChart'), 'Humedad', 'Humedad (%)');
         charts.wind = createCompareChart(document.getElementById('windCompareChart'), 'Viento', 'Velocidad (km/h)');
-        charts.rain = createCompareChart(document.getElementById('rainCompareChart'), 'Lluvia', 'Precipitación (mm)');
+        charts.rain = createCompareChart(document.getElementById('rainCompareChart'), 'Lluvia', 'Precipitación (mm)', 'bar');
         charts.solar = createCompareChart(document.getElementById('solarCompareChart'), 'Radiación Solar', 'Radiación (W/m²)');
 
         // Cargar datos de comparación
         async function loadCompareData() {
+            document.getElementById('compareLoading').style.display = 'block';
             const days = document.getElementById('compareDays').value;
             
             try {
@@ -197,7 +203,7 @@
                 const data = await response.json();
 
                 // Procesar datos para cada estación
-                const allLabels = new Set();
+                const allLabels = new Map(); // ts -> label
                 const stationData = {};
 
                 for (const [stationKey, stationInfo] of Object.entries(data)) {
@@ -214,16 +220,20 @@
 
                     // Recopilar todas las etiquetas de tiempo
                     records.forEach(r => {
-                        const label = new Date(r.timestamp * 1000).toLocaleString('es-ES', {
+                        const ts = r.timestamp;
+                        const label = new Date(ts * 1000).toLocaleString('es-ES', {
                             month: 'short',
                             day: 'numeric',
-                            hour: '2-digit'
+                            hour: '2-digit',
+                            minute: '2-digit'
                         });
-                        allLabels.add(label);
+                        allLabels.set(ts, label);
                     });
                 }
 
-                const labels = Array.from(allLabels).sort();
+                const labels = Array.from(allLabels.entries())
+                    .sort((a, b) => a[0] - b[0])
+                    .map(([, label]) => label);
 
                 // Actualizar cada gráfico
                 updateCompareChart(charts.temp, labels, stationData, 'temperature', 'Temperatura');
@@ -234,12 +244,64 @@
 
             } catch (error) {
                 alert('Error al cargar datos de comparación: ' + error.message);
+            } finally {
+                document.getElementById('compareLoading').style.display = 'none';
             }
         }
 
         function updateCompareChart(chart, labels, stationData, dataKey, labelPrefix) {
-            chart.data.labels = labels;
             chart.data.datasets = [];
+
+            // Caso especial: lluvia en barras, mostrar solo fechas con lluvia > 0
+            if (dataKey === 'rain') {
+                const labelMap = new Map(); // ts -> label
+                const stationValues = {};
+
+                for (const [stationKey, info] of Object.entries(stationData)) {
+                    const records = info.records || [];
+                    const map = {};
+                    records.forEach(r => {
+                        const ts = r.timestamp;
+                        const label = new Date(ts * 1000).toLocaleString('es-ES', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                        const val = r[dataKey] ?? null;
+                        if (val && val > 0) {
+                            map[ts] = val; // lluvia ya en mm
+                            labelMap.set(ts, label);
+                        }
+                    });
+                    stationValues[stationKey] = map;
+                }
+
+                const filtered = Array.from(labelMap.entries()).sort((a, b) => a[0] - b[0]);
+                const filteredLabels = filtered.map(([, label]) => label);
+                const filteredTimestamps = filtered.map(([ts]) => ts);
+                chart.data.labels = filteredLabels;
+
+                for (const [stationKey, info] of Object.entries(stationData)) {
+                    const map = stationValues[stationKey];
+                    const data = filteredTimestamps.map(ts => map[ts] ?? null);
+                    const isBar = true;
+                    chart.data.datasets.push({
+                        label: info.name,
+                        data,
+                        type: 'bar',
+                        borderColor: stationColors[stationKey],
+                        backgroundColor: stationColors[stationKey] + '66',
+                        borderWidth: 1,
+                    });
+                }
+
+                chart.update();
+                return;
+            }
+
+            // Resto de variables: se usan todas las etiquetas
+            chart.data.labels = labels;
 
             for (const [stationKey, info] of Object.entries(stationData)) {
                 const records = info.records;
@@ -251,15 +313,18 @@
                 } else if (dataKey === 'wind_speed') {
                     data = data.map(val => val ? (val * 1.60934) : null);
                 } else if (dataKey === 'rain') {
-                    data = data.map(val => val ? (val * 25.4) : null);
+                    data = data.map(val => val ?? null);
                 }
                 
+                const isBar = chart.config.type === 'bar';
                 chart.data.datasets.push({
                     label: info.name,
                     data: data,
+                    type: isBar ? 'bar' : 'line',
                     borderColor: stationColors[stationKey],
-                    backgroundColor: stationColors[stationKey] + '20',
-                    tension: 0.4,
+                    backgroundColor: stationColors[stationKey] + (isBar ? '66' : '20'),
+                    borderWidth: isBar ? 1 : 2,
+                    tension: isBar ? undefined : 0.4,
                     fill: false
                 });
             }

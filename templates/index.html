@@ -126,13 +126,8 @@
                 const tempC = data.temperature ? ((data.temperature - 32) * 5 / 9).toFixed(1) : null;
                 const windKmh = data.wind_speed ? (data.wind_speed * 1.60934).toFixed(1) : null;
                 
-                // Para lluvia: si viene en mm, usar directo; si viene en in, convertir
-                let rainMm = 0;
-                if (data.rain_rate !== null && data.rain_rate !== undefined) {
-                    // Si el valor es menor a 5, probablemente ya está en mm
-                    // Si es mayor, probablemente está en pulgadas y necesita conversión
-                    rainMm = data.rain_rate < 5 ? data.rain_rate : (data.rain_rate * 25.4);
-                }
+                // Lluvia: el backend ahora entrega lluvia en mm, sin necesidad de heurísticas
+                const rainMm = (data.rain_rate !== null && data.rain_rate !== undefined) ? data.rain_rate : 0;
                 
                 // Formatear datos
                 const html = `

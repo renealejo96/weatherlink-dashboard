@@ -226,8 +226,8 @@ def export_to_excel(station_key):
             wind_kmh = (record.get('wind_speed', 0) * 1.60934) if record.get('wind_speed') else None
             ws.cell(row=row_idx, column=4, value=round(wind_kmh, 2) if wind_kmh else '')
             
-            # Lluvia (in -> mm)
-            rain_mm = (record.get('rain', 0) * 25.4) if record.get('rain') else None
+            # Lluvia en mm (el backend ya entrega mm)
+            rain_mm = record.get('rain')
             ws.cell(row=row_idx, column=5, value=round(rain_mm, 2) if rain_mm else '')
             
             # Radiación Solar
