@@ -52,6 +52,41 @@
             backdrop-filter: blur(10px);
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
+        .rain-alert {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            color: white;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 10px 30px rgba(79, 172, 254, 0.3); }
+            50% { box-shadow: 0 10px 40px rgba(79, 172, 254, 0.6); }
+        }
+        .rain-history-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .event-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        .event-active {
+            background: #28a745;
+            color: white;
+        }
+        .event-closed {
+            background: #6c757d;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -67,6 +102,9 @@
                         <a class="nav-link active" href="/">Dashboard</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="/rain/events"><i class="fas fa-cloud-rain"></i> Eventos de Lluvia</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="/compare">Comparar Estaciones</a>
                     </li>
                 </ul>
@@ -78,6 +116,21 @@
         <div class="text-center mb-4">
             <h1 class="text-white"><i class="fas fa-broadcast-tower"></i> Estaciones Meteorológicas</h1>
             <p class="text-white">Monitoreo en tiempo real de las 3 estaciones</p>
+        </div>
+
+        <!-- Eventos de Lluvia Activos -->
+        <div id="rain-alerts-container"></div>
+
+        <!-- Historial de Eventos de Lluvia -->
+        <div class="rain-history-card">
+            <h4 class="mb-3"><i class="fas fa-cloud-rain"></i> Historial de Eventos de Lluvia</h4>
+            <div id="rain-history">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="row">
@@ -175,6 +228,126 @@
         setInterval(() => {
             stations.forEach(station => loadCurrentData(station));
         }, 300000);
+
+        // Cargar eventos de lluvia activos
+        async function loadActiveRainEvents() {
+            try {
+                const response = await fetch('/api/rain/events/active');
+                const data = await response.json();
+                
+                const container = document.getElementById('rain-alerts-container');
+                
+                if (data.success && data.data.length > 0) {
+                    let html = '';
+                    data.data.forEach(event => {
+                        const duration = Math.floor(event.duration_minutes);
+                        const hours = Math.floor(duration / 60);
+                        const mins = duration % 60;
+                        const timeStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
+                        
+                        html += `
+                            <div class="rain-alert">
+                                <div class="row align-items-center">
+                                    <div class="col-md-8">
+                                        <h3><i class="fas fa-cloud-showers-heavy"></i> ¡Lluvia Activa!</h3>
+                                        <h4>${event.station_name} (${event.station_key})</h4>
+                                        <p class="mb-0">
+                                            <strong>Acumulado en este evento:</strong> ${event.rain_accumulated.toFixed(2)} mm
+                                            <br>
+                                            <strong>Duración:</strong> ${timeStr}
+                                            <br>
+                                            <strong>Intensidad máxima:</strong> ${event.max_intensity.toFixed(2)} mm
+                                        </p>
+                                    </div>
+                                    <div class="col-md-4 text-center">
+                                        <div style="font-size: 4em;">
+                                            <i class="fas fa-cloud-rain"></i>
+                                        </div>
+                                        <span class="event-badge event-active">
+                                            <i class="fas fa-circle-notch fa-spin"></i> En curso
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '';
+                }
+            } catch (error) {
+                console.error('Error al cargar eventos activos:', error);
+            }
+        }
+
+        // Cargar historial de eventos de lluvia
+        async function loadRainHistory() {
+            try {
+                const response = await fetch('/api/rain/events/history?limit=10');
+                const data = await response.json();
+                
+                const container = document.getElementById('rain-history');
+                
+                if (data.success && data.data.length > 0) {
+                    let html = '<div class="table-responsive"><table class="table table-hover">';
+                    html += `
+                        <thead>
+                            <tr>
+                                <th>Estación</th>
+                                <th>Inicio</th>
+                                <th>Fin</th>
+                                <th>Duración</th>
+                                <th>Acumulado</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    `;
+                    
+                    data.data.forEach(event => {
+                        const startDate = new Date(event.event_start);
+                        const endDate = event.event_end ? new Date(event.event_end) : null;
+                        const duration = event.duration_minutes || 0;
+                        const hours = Math.floor(duration / 60);
+                        const mins = Math.floor(duration % 60);
+                        const durationStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
+                        
+                        html += `
+                            <tr>
+                                <td><strong>${event.station_name}</strong><br><small class="text-muted">${event.station_key}</small></td>
+                                <td>${startDate.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                                <td>${endDate ? endDate.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
+                                <td>${durationStr}</td>
+                                <td><strong>${event.rain_accumulated ? event.rain_accumulated.toFixed(2) : '0.00'} mm</strong></td>
+                                <td>
+                                    <span class="event-badge ${event.is_active ? 'event-active' : 'event-closed'}">
+                                        ${event.is_active ? '<i class="fas fa-circle-notch fa-spin"></i> Activo' : '<i class="fas fa-check"></i> Finalizado'}
+                                    </span>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</tbody></table></div>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div class="alert alert-info"><i class="fas fa-info-circle"></i> No hay eventos de lluvia registrados</div>';
+                }
+            } catch (error) {
+                container.innerHTML = '<div class="alert alert-danger">Error al cargar el historial</div>';
+                console.error('Error al cargar historial:', error);
+            }
+        }
+
+        // Cargar eventos de lluvia al inicio
+        loadActiveRainEvents();
+        loadRainHistory();
+
+        // Actualizar eventos de lluvia cada 30 segundos
+        setInterval(() => {
+            loadActiveRainEvents();
+            loadRainHistory();
+        }, 30000);
     </script>
 </body>
 </html>

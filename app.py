@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 from datetime import datetime, timedelta
 import os
 import time
+import pytz
 from dotenv import load_dotenv
 from weatherlink_client import WeatherLinkClient
 from openpyxl import Workbook
@@ -13,6 +14,28 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# Deshabilitar caché para HTML
+@app.after_request
+def add_header(response):
+    if response.mimetype == 'text/html':
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
+# Importar funciones de Supabase
+try:
+    from supabase_api import (
+        get_latest_readings, 
+        get_station_history, 
+        get_daily_summary,
+        get_all_stations_comparison
+    )
+    SUPABASE_ENABLED = True
+except ImportError:
+    SUPABASE_ENABLED = False
+    print("⚠️  Supabase no disponible - usando solo API directa de WeatherLink")
 
 # Configurar las 3 estaciones
 STATIONS = {
@@ -69,7 +92,13 @@ def set_cached_data(cache_key, data):
 @app.route('/')
 def index():
     """Página principal con dashboard de las 3 estaciones"""
-    return render_template('index.html', stations=STATIONS)
+    return render_template('index.html', stations=STATIONS, supabase_enabled=SUPABASE_ENABLED)
+
+
+@app.route('/rain/events')
+def rain_events_dashboard():
+    """Dashboard dedicado a eventos de lluvia"""
+    return render_template('rain_events.html', stations=STATIONS)
 
 
 @app.route('/api/current/<station_key>')
@@ -211,9 +240,14 @@ def export_to_excel(station_key):
             cell.alignment = Alignment(horizontal='center')
         
         # Datos
+        # Ecuador timezone UTC-5
         for row_idx, record in enumerate(records, 2):
-            # Fecha
-            ws.cell(row=row_idx, column=1, value=datetime.fromtimestamp(record['timestamp']).strftime('%Y-%m-%d %H:%M:%S'))
+            # Fecha - Convertir timestamp Unix a hora de Ecuador
+            # Los timestamps son UTC, restar 5 horas para Ecuador
+            timestamp = record['timestamp']
+            ecuador_dt = datetime.utcfromtimestamp(timestamp) - timedelta(hours=5)
+            
+            ws.cell(row=row_idx, column=1, value=ecuador_dt.strftime('%Y-%m-%d %H:%M:%S'))
             
             # Temperatura (F -> C)
             temp_c = ((record.get('temperature', 0) - 32) * 5 / 9) if record.get('temperature') else None
@@ -273,6 +307,120 @@ def export_to_excel(station_key):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================
+# RUTAS DE SUPABASE (datos en tiempo real)
+# ============================================
+
+@app.route('/api/supabase/latest')
+def api_supabase_latest():
+    """GET /api/supabase/latest - Últimas lecturas de todas las estaciones desde Supabase"""
+    if not SUPABASE_ENABLED:
+        return jsonify({'error': 'Supabase no configurado'}), 503
+    
+    result = get_latest_readings()
+    if result['success']:
+        return jsonify(result['data'])
+    return jsonify({'error': result['error']}), 500
+
+
+@app.route('/api/supabase/station/<station_key>/history')
+def api_supabase_history(station_key):
+    """GET /api/supabase/station/<key>/history?hours=24 - Historial desde Supabase"""
+    if not SUPABASE_ENABLED:
+        return jsonify({'error': 'Supabase no configurado'}), 503
+    
+    hours = int(request.args.get('hours', 24))
+    result = get_station_history(station_key, hours)
+    if result['success']:
+        return jsonify(result['data'])
+    return jsonify({'error': result['error']}), 500
+
+
+@app.route('/api/supabase/station/<station_key>/daily')
+def api_supabase_daily(station_key):
+    """GET /api/supabase/station/<key>/daily?days=7 - Resumen diario desde Supabase"""
+    if not SUPABASE_ENABLED:
+        return jsonify({'error': 'Supabase no configurado'}), 503
+    
+    days = int(request.args.get('days', 7))
+    result = get_daily_summary(station_key, days)
+    if result['success']:
+        return jsonify(result['data'])
+    return jsonify({'error': result['error']}), 500
+
+
+@app.route('/api/supabase/comparison')
+def api_supabase_comparison():
+    """GET /api/supabase/comparison - Comparación de todas las estaciones desde Supabase"""
+    if not SUPABASE_ENABLED:
+        return jsonify({'error': 'Supabase no configurado'}), 503
+    
+    result = get_all_stations_comparison()
+    if result['success']:
+        return jsonify(result['data'])
+    return jsonify({'error': result['error']}), 500
+
+
+@app.route('/api/rain/events/active')
+def api_rain_events_active():
+    """GET /api/rain/events/active - Eventos de lluvia activos"""
+    if not SUPABASE_ENABLED:
+        return jsonify({'error': 'Supabase no configurado'}), 503
+    
+    try:
+        import requests
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/active_rain_events"
+        headers = {
+            "apikey": os.getenv('SUPABASE_KEY'),
+            "Authorization": f"Bearer {os.getenv('SUPABASE_KEY')}",
+        }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return jsonify({'success': True, 'data': response.json()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/rain/events/history')
+def api_rain_events_history():
+    """GET /api/rain/events/history?station_key=finca1&limit=10 - Historial de eventos"""
+    if not SUPABASE_ENABLED:
+        return jsonify({'error': 'Supabase no configurado'}), 503
+    
+    station_key = request.args.get('station_key')
+    limit = request.args.get('limit', 10, type=int)
+    
+    try:
+        import requests
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/rain_events"
+        headers = {
+            "apikey": os.getenv('SUPABASE_KEY'),
+            "Authorization": f"Bearer {os.getenv('SUPABASE_KEY')}",
+        }
+        params = {
+            'order': 'event_start.desc',
+            'limit': limit
+        }
+        if station_key:
+            params['station_key'] = f'eq.{station_key}'
+        
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        return jsonify({'success': True, 'data': response.json()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/dashboard')
+def dashboard():
+    """Dashboard en tiempo real con datos de Supabase"""
+    if not SUPABASE_ENABLED:
+        return render_template('error.html', 
+                             message='Supabase no está configurado. Usa la vista principal.'), 503
+    
+    return render_template('dashboard.html', stations=STATIONS)
 
 
 if __name__ == '__main__':
