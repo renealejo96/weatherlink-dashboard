@@ -413,6 +413,85 @@ def api_rain_events_history():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/rain/accumulated')
+def api_rain_accumulated():
+    """GET /api/rain/accumulated - Lluvia acumulada por día y semana"""
+    if not SUPABASE_ENABLED:
+        return jsonify({'error': 'Supabase no configurado'}), 503
+    
+    try:
+        import requests
+        from collections import defaultdict
+        from datetime import datetime, timedelta
+        
+        # Obtener todos los eventos de lluvia de las últimas 8 semanas
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/rain_events"
+        headers = {
+            "apikey": os.getenv('SUPABASE_KEY'),
+            "Authorization": f"Bearer {os.getenv('SUPABASE_KEY')}",
+        }
+        
+        # Fecha de hace 8 semanas
+        eight_weeks_ago = (datetime.now() - timedelta(weeks=8)).isoformat()
+        
+        params = {
+            'event_start': f'gte.{eight_weeks_ago}',
+            'order': 'event_start.desc',
+            'limit': 1000
+        }
+        
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        events = response.json()
+        
+        # Agrupar por estación, semana y día
+        by_week = defaultdict(lambda: defaultdict(float))  # {station: {week: total}}
+        by_day = defaultdict(lambda: defaultdict(float))   # {station: {date: total}}
+        
+        for event in events:
+            station_key = event['station_key']
+            station_name = event['station_name']
+            rain = event.get('rain_accumulated', 0) or 0
+            
+            # Parsear fecha de inicio
+            event_start = datetime.fromisoformat(event['event_start'].replace('Z', '+00:00'))
+            
+            # Calcular número de semana (formato: YY-WW)
+            year = event_start.year % 100  # Últimos 2 dígitos del año
+            week = event_start.isocalendar()[1]  # Número de semana
+            week_key = f"{year:02d}-{week:02d}"
+            
+            # Fecha del día (formato: YYYY-MM-DD)
+            day_key = event_start.strftime('%Y-%m-%d')
+            
+            # Acumular
+            by_week[station_key][week_key] += rain
+            by_day[station_key][day_key] += rain
+        
+        # Convertir a formato de respuesta
+        result = {
+            'by_week': {},
+            'by_day': {},
+            'stations': {}
+        }
+        
+        # Agregar nombres de estaciones
+        for station_key in STATIONS:
+            result['stations'][station_key] = STATIONS[station_key]['name']
+        
+        # Convertir defaultdict a dict normal
+        for station_key in by_week:
+            result['by_week'][station_key] = dict(by_week[station_key])
+        
+        for station_key in by_day:
+            result['by_day'][station_key] = dict(by_day[station_key])
+        
+        return jsonify({'success': True, 'data': result})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/dashboard')
 def dashboard():
     """Dashboard en tiempo real con datos de Supabase"""

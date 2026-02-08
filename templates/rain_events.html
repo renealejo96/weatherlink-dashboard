@@ -167,6 +167,79 @@
             </div>
         </div>
 
+        <!-- Lluvia Acumulada por Semana y Día -->
+        <div class="main-card">
+            <h3 class="mb-4"><i class="fas fa-calendar-alt"></i> Lluvia Acumulada</h3>
+            
+            <!-- Tabs para Semana/Día -->
+            <ul class="nav nav-tabs mb-3" id="accumulatedTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="week-tab" data-bs-toggle="tab" data-bs-target="#week" type="button">
+                        <i class="fas fa-calendar-week"></i> Por Semana
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="day-tab" data-bs-toggle="tab" data-bs-target="#day" type="button">
+                        <i class="fas fa-calendar-day"></i> Por Día
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="accumulatedTabsContent">
+                <!-- Por Semana -->
+                <div class="tab-pane fade show active" id="week" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th><i class="fas fa-calendar-week"></i> Semana</th>
+                                    {% for key, station in stations.items() %}
+                                    <th class="text-center">{{ station.name }}</th>
+                                    {% endfor %}
+                                    <th class="text-center"><strong>Total</strong></th>
+                                </tr>
+                            </thead>
+                            <tbody id="week-tbody">
+                                <tr>
+                                    <td colspan="100" class="text-center">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Cargando...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Por Día -->
+                <div class="tab-pane fade" id="day" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th><i class="fas fa-calendar-day"></i> Fecha</th>
+                                    {% for key, station in stations.items() %}
+                                    <th class="text-center">{{ station.name }}</th>
+                                    {% endfor %}
+                                    <th class="text-center"><strong>Total</strong></th>
+                                </tr>
+                            </thead>
+                            <tbody id="day-tbody">
+                                <tr>
+                                    <td colspan="100" class="text-center">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Cargando...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Historial de Eventos -->
         <div class="main-card">
             <h3 class="mb-4"><i class="fas fa-history"></i> Historial Completo de Eventos</h3>
@@ -358,6 +431,121 @@
             }
         }
 
+        // Cargar lluvia acumulada por semana y día
+        async function loadAccumulatedRain() {
+            try {
+                const response = await fetch('/api/rain/accumulated');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    console.error('Error al cargar acumulados:', data.error);
+                    return;
+                }
+                
+                const accumulated = data.data;
+                const stationKeys = Object.keys(accumulated.stations || {});
+                const today = new Date().toISOString().split('T')[0];
+                
+                // Procesar datos por SEMANA
+                const weekData = accumulated.by_week || {};
+                const allWeeks = new Set();
+                
+                // Recolectar todas las semanas
+                Object.values(weekData).forEach(stationWeeks => {
+                    Object.keys(stationWeeks).forEach(week => allWeeks.add(week));
+                });
+                
+                // Ordenar semanas (más reciente primero)
+                const sortedWeeks = Array.from(allWeeks).sort().reverse().slice(0, 8);
+                
+                const weekTbody = document.getElementById('week-tbody');
+                let weekHtml = '';
+                
+                if (sortedWeeks.length === 0) {
+                    weekHtml = '<tr><td colspan="100" class="text-center">No hay datos disponibles</td></tr>';
+                } else {
+                    sortedWeeks.forEach(week => {
+                        let rowTotal = 0;
+                        let cells = '';
+                        
+                        stationKeys.forEach(stationKey => {
+                            const value = (weekData[stationKey] && weekData[stationKey][week]) || 0;
+                            rowTotal += value;
+                            
+                            const cellClass = value > 0 ? 'text-primary fw-bold' : 'text-muted';
+                            cells += `<td class="text-center ${cellClass}">${value > 0 ? value.toFixed(2) : '-'}</td>`;
+                        });
+                        
+                        const totalClass = rowTotal > 0 ? 'text-success fw-bold' : 'text-muted';
+                        weekHtml += `
+                            <tr>
+                                <td><strong>Semana ${week}</strong></td>
+                                ${cells}
+                                <td class="text-center ${totalClass}"><strong>${rowTotal > 0 ? rowTotal.toFixed(2) + ' mm' : '-'}</strong></td>
+                            </tr>
+                        `;
+                    });
+                }
+                
+                weekTbody.innerHTML = weekHtml;
+                
+                // Procesar datos por DÍA
+                const dayData = accumulated.by_day || {};
+                const allDays = new Set();
+                
+                // Recolectar todos los días
+                Object.values(dayData).forEach(stationDays => {
+                    Object.keys(stationDays).forEach(day => allDays.add(day));
+                });
+                
+                // Ordenar días (más reciente primero)
+                const sortedDays = Array.from(allDays).sort().reverse().slice(0, 14);
+                
+                const dayTbody = document.getElementById('day-tbody');
+                let dayHtml = '';
+                
+                if (sortedDays.length === 0) {
+                    dayHtml = '<tr><td colspan="100" class="text-center">No hay datos disponibles</td></tr>';
+                } else {
+                    sortedDays.forEach(day => {
+                        let rowTotal = 0;
+                        let cells = '';
+                        
+                        stationKeys.forEach(stationKey => {
+                            const value = (dayData[stationKey] && dayData[stationKey][day]) || 0;
+                            rowTotal += value;
+                            
+                            const cellClass = value > 0 ? 'text-primary fw-bold' : 'text-muted';
+                            cells += `<td class="text-center ${cellClass}">${value > 0 ? value.toFixed(2) : '-'}</td>`;
+                        });
+                        
+                        // Resaltar día actual
+                        const dateLabel = new Date(day + 'T00:00:00').toLocaleDateString('es-ES', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                        });
+                        const isToday = day === today;
+                        const dateClass = isToday ? 'bg-warning bg-opacity-25' : '';
+                        const totalClass = rowTotal > 0 ? 'text-success fw-bold' : 'text-muted';
+                        
+                        dayHtml += `
+                            <tr class="${dateClass}">
+                                <td><strong>${dateLabel}${isToday ? ' <span class="badge bg-warning text-dark">HOY</span>' : ''}</strong></td>
+                                ${cells}
+                                <td class="text-center ${totalClass}"><strong>${rowTotal > 0 ? rowTotal.toFixed(2) + ' mm' : '-'}</strong></td>
+                            </tr>
+                        `;
+                    });
+                }
+                
+                dayTbody.innerHTML = dayHtml;
+                
+            } catch (error) {
+                console.error('Error al cargar lluvia acumulada:', error);
+            }
+        }
+
         // Filtrar por estación
         function filterByStation(station) {
             currentFilter = station;
@@ -377,11 +565,13 @@
         // Cargar datos al inicio
         loadActiveEvents();
         loadEventsHistory();
+        loadAccumulatedRain();
 
         // Actualizar automáticamente cada 15 segundos
         setInterval(() => {
             loadActiveEvents();
             loadEventsHistory();
+            loadAccumulatedRain();
         }, 15000);
     </script>
 </body>

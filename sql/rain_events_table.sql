@@ -41,13 +41,13 @@ ORDER BY event_start DESC;
 CREATE OR REPLACE FUNCTION close_inactive_rain_events()
 RETURNS void AS $$
 BEGIN
-    -- Cerrar eventos que no han tenido actualización en 15 minutos
+    -- Cerrar eventos que no han tenido actualización en 30 minutos
     UPDATE rain_events
     SET is_active = false,
         event_end = updated_at,
         duration_minutes = EXTRACT(EPOCH FROM (updated_at - event_start))/60
     WHERE is_active = true
-      AND updated_at < NOW() - INTERVAL '15 minutes';
+      AND updated_at < NOW() - INTERVAL '30 minutes';
 END;
 $$ LANGUAGE plpgsql;
 

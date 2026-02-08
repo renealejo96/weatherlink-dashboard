@@ -23,7 +23,7 @@ KAFKA_TOPIC_RAW = 'weatherlink.raw'
 
 # Umbrales
 RAIN_START_THRESHOLD = 0.1  # mm de incremento para detectar inicio
-NO_RAIN_TIMEOUT_MINUTES = 15  # minutos sin incremento para cerrar evento
+NO_RAIN_TIMEOUT_MINUTES = 30  # minutos sin incremento para cerrar evento
 
 
 class RainEventState:
@@ -99,18 +99,24 @@ def close_rain_event(station_key, rain_at_end, event_start):
     
     try:
         update_url = f"{url}?station_key=eq.{station_key}&is_active=eq.true"
-        event_end = datetime.now().isoformat()
+        event_end = datetime.now()
+        event_end_iso = event_end.isoformat()
+        
+        # Calcular duración en minutos
+        duration_minutes = int((event_end - event_start).total_seconds() / 60)
         
         update_data = {
             "is_active": False,
-            "event_end": event_end,
-            "rain_at_end": rain_at_end,
-            "updated_at": event_end
+            "event_end": event_end_iso,
+            "rain_at_end": float(rain_at_end),
+            "duration_minutes": duration_minutes,
+            "updated_at": event_end_iso
         }
         
         response = requests.patch(update_url, headers=headers, json=update_data)
         if response.status_code in [200, 204]:
             print(f"✅ Evento de lluvia cerrado para {station_key}")
+            print(f"   Duración total: {duration_minutes} minutos")
         else:
             print(f"⚠️  Error cerrando evento: {response.status_code}")
     except Exception as e:
@@ -192,6 +198,7 @@ def process_rain_data(batch_df, batch_id):
             # Actualizar en Supabase
             event_data = {
                 'rain_accumulated': float(accumulated),
+                'rain_at_end': float(rain_mm),  # Actualizar también el valor final
                 'duration_minutes': int(duration),
                 'updated_at': current_time.isoformat()
             }
