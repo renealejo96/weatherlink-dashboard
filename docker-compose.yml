@@ -22,6 +22,116 @@ services:
       retries: 3
       start_period: 40s
 
+  # Kafka-compatible broker (Redpanda)
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "9092:9092"    # Kafka API
+      - "19092:19092"  # External Kafka API
+      - "9644:9644"    # Admin API
+    networks:
+      - weatherlink_network
+
+  # Optional: Redpanda Console UI
+  redpanda-console:
+    image: redpandadata/console:latest
+    container_name: redpanda_console
+    restart: unless-stopped
+    environment:
+      - KAFKA_BROKERS=redpanda:9092
+    ports:
+      - "8082:8080"
+    depends_on:
+      - redpanda
+    networks:
+      - weatherlink_network
+
+  # Kafka Producer - Envía datos de WeatherLink API a Kafka
+  kafka-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kafka_producer
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - KAFKA_TOPIC_RAW=weatherlink.raw
+      - POLL_INTERVAL_SEC=60
+    command: python kafka_producer.py
+    depends_on:
+      - redpanda
+    networks:
+      - weatherlink_network
+    volumes:
+      - ./logs:/app/logs
+
+  # Spark Streaming - Procesa datos y guarda en Supabase
+  spark-streaming:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spark_streaming
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - KAFKA_TOPIC_RAW=weatherlink.raw
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+    command: python spark_to_supabase.py
+    depends_on:
+      - redpanda
+      - kafka-producer
+    networks:
+      - weatherlink_network
+    volumes:
+      - ./logs:/app/logs
+
+  # Sistema de Alertas de Lluvia
+  rain-alerts:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rain_alerts
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - KAFKA_TOPIC_RAW=weatherlink.raw
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+    command: python rain_alerts_v2.py
+    depends_on:
+      - redpanda
+      - kafka-producer
+    networks:
+      - weatherlink_network
+    volumes:
+      - ./logs:/app/logs
+
   # Nginx como reverse proxy
   nginx:
     image: nginx:alpine

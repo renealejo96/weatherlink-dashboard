@@ -309,7 +309,7 @@
                 // Convertir unidades a métricas
                 const tempC = records.map(r => r.temperature ? ((r.temperature - 32) * 5 / 9) : null);
                 const windKmh = records.map(r => r.wind_speed ? (r.wind_speed * 1.60934) : null);
-                const rainMm = records.map(r => r.rain ? (r.rain * 25.4) : null);
+                const rainMm = records.map(r => (r.rain_mm ?? r.rain ?? null));
                 const vpd = records.map(r => {
                     if (r.temperature && r.humidity) {
                         const tc = (r.temperature - 32) * 5 / 9;

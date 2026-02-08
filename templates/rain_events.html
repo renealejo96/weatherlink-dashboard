@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eventos de Lluvia - Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .navbar-custom {
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .main-card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+        }
+        .active-event-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 25px;
+            color: white;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 30px rgba(102, 126, 234, 0.4);
+            animation: pulse 3s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 8px 30px rgba(102, 126, 234, 0.4); }
+            50% { box-shadow: 0 8px 50px rgba(102, 126, 234, 0.7); }
+        }
+        .no-active {
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            color: #6c757d;
+        }
+        .event-row {
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .event-row:hover {
+            background: #f8f9fa !important;
+            transform: scale(1.01);
+        }
+        .badge-custom {
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .badge-active {
+            background: #28a745;
+            color: white;
+        }
+        .badge-finished {
+            background: #6c757d;
+            color: white;
+        }
+        .metric-box {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            color: white;
+            margin-bottom: 20px;
+        }
+        .metric-box h3 {
+            font-size: 2.5em;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .metric-box p {
+            margin: 0;
+            opacity: 0.9;
+        }
+        .station-filter {
+            margin: 20px 0;
+        }
+        .station-filter .btn {
+            margin: 5px;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #6c757d;
+            font-size: 0.85em;
+        }
+        .detail-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+        }
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .loading-spinner {
+            text-align: center;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light navbar-custom mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="fas fa-cloud-rain"></i> Eventos de Lluvia</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Dashboard Principal</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/rain/events">Eventos de Lluvia</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/compare">Comparar Estaciones</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="text-center mb-4">
+            <h1 class="text-white"><i class="fas fa-cloud-showers-heavy"></i> Dashboard de Eventos de Lluvia</h1>
+            <p class="text-white">Monitoreo detallado de eventos de lluvia en tiempo real</p>
+            <small class="text-white">Actualización automática cada 15 segundos</small>
+        </div>
+
+        <!-- Eventos Activos -->
+        <div class="main-card">
+            <h3 class="mb-4"><i class="fas fa-circle-notch fa-spin text-primary"></i> Eventos Activos Ahora</h3>
+            <div id="active-events">
+                <div class="loading-spinner">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="main-card">
+            <h4><i class="fas fa-filter"></i> Filtrar por Estación</h4>
+            <div class="station-filter">
+                <button class="btn btn-outline-primary active" onclick="filterByStation('all')">
+                    <i class="fas fa-globe"></i> Todas las Estaciones
+                </button>
+                {% for key, station in stations.items() %}
+                <button class="btn btn-outline-secondary" onclick="filterByStation('{{ key }}')">
+                    <i class="fas fa-map-marker-alt"></i> {{ station.name }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Historial de Eventos -->
+        <div class="main-card">
+            <h3 class="mb-4"><i class="fas fa-history"></i> Historial Completo de Eventos</h3>
+            <div class="table-responsive">
+                <table class="table table-hover" id="events-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th><i class="fas fa-map-marker-alt"></i> Estación</th>
+                            <th><i class="fas fa-play-circle"></i> Inicio</th>
+                            <th><i class="fas fa-stop-circle"></i> Fin</th>
+                            <th><i class="fas fa-clock"></i> Duración</th>
+                            <th><i class="fas fa-tint"></i> Lluvia Acumulada</th>
+                            <th><i class="fas fa-bolt"></i> Intensidad Máx.</th>
+                            <th><i class="fas fa-info-circle"></i> Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="events-tbody">
+                        <tr>
+                            <td colspan="8" class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Cargando...</span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentFilter = 'all';
+
+        // Formatear fecha y hora
+        function formatDateTime(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            const day = date.toLocaleDateString('es-ES', { 
+                day: '2-digit', 
+                month: 'short', 
+                year: 'numeric' 
+            });
+            const time = date.toLocaleTimeString('es-ES', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            return `${day}<br><small class="text-muted">${time}</small>`;
+        }
+
+        // Formatear duración
+        function formatDuration(minutes) {
+            if (!minutes) return '-';
+            const hours = Math.floor(minutes / 60);
+            const mins = Math.floor(minutes % 60);
+            if (hours > 0) {
+                return `${hours}h ${mins}min`;
+            }
+            return `${mins}min`;
+        }
+
+        // Cargar eventos activos
+        async function loadActiveEvents() {
+            try {
+                const response = await fetch('/api/rain/events/active');
+                const data = await response.json();
+                
+                const container = document.getElementById('active-events');
+                
+                if (data.success && data.data.length > 0) {
+                    let html = '<div class="row">';
+                    
+                    data.data.forEach(event => {
+                        const duration = formatDuration(event.duration_minutes);
+                        const startDate = new Date(event.event_start);
+                        const startTime = startDate.toLocaleString('es-ES', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                        
+                        html += `
+                            <div class="col-md-6">
+                                <div class="active-event-card">
+                                    <div class="row align-items-center">
+                                        <div class="col-8">
+                                            <h4><i class="fas fa-cloud-rain"></i> ${event.station_name}</h4>
+                                            <p class="detail-label text-white-50 mb-1">INICIO DEL EVENTO</p>
+                                            <p class="detail-value text-white">${startTime}</p>
+                                            
+                                            <p class="detail-label text-white-50 mb-1 mt-3">LLUVIA ACUMULADA</p>
+                                            <h3 class="m-0">${event.rain_accumulated.toFixed(2)} mm</h3>
+                                            
+                                            <p class="detail-label text-white-50 mb-1 mt-3">DURACIÓN</p>
+                                            <p class="detail-value text-white">${duration}</p>
+                                        </div>
+                                        <div class="col-4 text-center">
+                                            <div style="font-size: 5em; opacity: 0.6;">
+                                                <i class="fas fa-cloud-showers-heavy"></i>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = `
+                        <div class="no-active">
+                            <i class="fas fa-sun" style="font-size: 4em; margin-bottom: 20px;"></i>
+                            <h4>No hay eventos de lluvia activos</h4>
+                            <p>Cuando comience a llover, aparecerá aquí en tiempo real</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error al cargar eventos activos:', error);
+            }
+        }
+
+        // Cargar historial de eventos
+        async function loadEventsHistory() {
+            try {
+                let url = '/api/rain/events/history?limit=50';
+                if (currentFilter !== 'all') {
+                    url += `&station_key=${currentFilter}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                const tbody = document.getElementById('events-tbody');
+                
+                if (data.success && data.data.length > 0) {
+                    let html = '';
+                    
+                    data.data.forEach(event => {
+                        const rowClass = event.is_active ? 'table-primary' : '';
+                        const badge = event.is_active 
+                            ? '<span class="badge-custom badge-active"><i class="fas fa-circle-notch fa-spin"></i> ACTIVO</span>'
+                            : '<span class="badge-custom badge-finished"><i class="fas fa-check"></i> Finalizado</span>';
+                        
+                        html += `
+                            <tr class="event-row ${rowClass}">
+                                <td><strong>#${event.id}</strong></td>
+                                <td>
+                                    <strong>${event.station_name}</strong><br>
+                                    <small class="text-muted">${event.station_key}</small>
+                                </td>
+                                <td>${formatDateTime(event.event_start)}</td>
+                                <td>${formatDateTime(event.event_end)}</td>
+                                <td><strong>${formatDuration(event.duration_minutes)}</strong></td>
+                                <td>
+                                    <strong style="color: #007bff; font-size: 1.1em;">
+                                        ${event.rain_accumulated ? event.rain_accumulated.toFixed(2) : '0.00'} mm
+                                    </strong>
+                                </td>
+                                <td>${event.max_intensity ? event.max_intensity.toFixed(2) : '0.00'} mm</td>
+                                <td>${badge}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    tbody.innerHTML = html;
+                } else {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="8" class="text-center">
+                                <i class="fas fa-info-circle"></i> No hay eventos registrados
+                            </td>
+                        </tr>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error al cargar historial:', error);
+                document.getElementById('events-tbody').innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center text-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Error al cargar los datos
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Filtrar por estación
+        function filterByStation(station) {
+            currentFilter = station;
+            
+            // Actualizar botones activos
+            document.querySelectorAll('.station-filter .btn').forEach(btn => {
+                btn.classList.remove('active', 'btn-outline-primary');
+                btn.classList.add('btn-outline-secondary');
+            });
+            event.target.classList.remove('btn-outline-secondary');
+            event.target.classList.add('btn-outline-primary', 'active');
+            
+            // Recargar historial
+            loadEventsHistory();
+        }
+
+        // Cargar datos al inicio
+        loadActiveEvents();
+        loadEventsHistory();
+
+        // Actualizar automáticamente cada 15 segundos
+        setInterval(() => {
+            loadActiveEvents();
+            loadEventsHistory();
+        }, 15000);
+    </script>
+</body>
+</html>
