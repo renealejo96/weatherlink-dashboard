@@ -24,6 +24,7 @@ KAFKA_TOPIC_RAW = 'weatherlink.raw'
 # Umbrales
 RAIN_START_THRESHOLD = 0.1  # mm de incremento para detectar inicio
 NO_RAIN_TIMEOUT_MINUTES = 30  # minutos sin incremento para cerrar evento
+MAX_EVENT_DURATION_MINUTES = 720  # 12 horas máximo por evento (protección)
 
 
 class RainEventState:
@@ -153,11 +154,15 @@ def process_rain_data(batch_df, batch_id):
         
         print(f"\n[DEBUG] Procesando {station_name} ({station_key}) | Lluvia actual: {rain_mm:.2f} mm")
 
+        # Obtener timestamp de la estación para ignorar datos duplicados
+        station_ts = row.get('event_time')
+
         # Inicializar estado si no existe
         if station_key not in station_states:
             station_states[station_key] = {
                 'last_rain': rain_mm,
                 'last_update': current_time,
+                'last_station_ts': station_ts,
                 'is_raining': False,
                 'event_start': None,
                 'rain_at_start': rain_mm,
@@ -167,10 +172,45 @@ def process_rain_data(batch_df, batch_id):
             continue
         
         state = station_states[station_key]
+
+        # IGNORAR datos duplicados (mismo timestamp de estación = misma lectura)
+        if state.get('last_station_ts') is not None and station_ts is not None:
+            if station_ts == state['last_station_ts']:
+                # Solo verificar timeout aunque el dato sea repetido
+                if state['is_raining']:
+                    time_since_last_rain = (current_time - state['last_update']).total_seconds() / 60
+                    event_duration = (current_time - state['event_start']).total_seconds() / 60
+                    if time_since_last_rain >= NO_RAIN_TIMEOUT_MINUTES or event_duration >= MAX_EVENT_DURATION_MINUTES:
+                        accumulated = state['last_rain'] - state['rain_at_start']
+                        reason = "duración máxima" if event_duration >= MAX_EVENT_DURATION_MINUTES else "inactividad"
+                        print(f"\n✅ Fin de lluvia en {station_name} por {reason}.")
+                        print(f"   Total acumulado: {accumulated:.2f} mm | Duración: {event_duration:.0f} min")
+                        close_rain_event(station_key, state['last_rain'], state['event_start'], state['rain_at_start'])
+                        state['is_raining'] = False
+                        state['event_start'] = None
+                        state['rain_at_start'] = state['last_rain']
+                continue  # Saltar dato duplicado
+
+        state['last_station_ts'] = station_ts
         rain_increment = rain_mm - state['last_rain']
         
         print(f"[DEBUG] Estado actual: is_raining={state['is_raining']}, last_rain={state['last_rain']:.2f}, last_update={state['last_update'].strftime('%H:%M:%S')}")
         print(f"[DEBUG] Incremento de lluvia: {rain_increment:.2f} mm")
+
+        # DETECTAR RESET DEL ACUMULADOR DIARIO (valor cae significativamente)
+        if rain_increment < -1.0:
+            print(f"[DEBUG] ⚠️  Reset de acumulador detectado para {station_name} (incremento: {rain_increment:.2f} mm)")
+            if state['is_raining']:
+                accumulated = state['last_rain'] - state['rain_at_start']
+                print(f"\n✅ Cerrando evento de lluvia en {station_name} por reset de acumulador.")
+                print(f"   Total acumulado: {accumulated:.2f} mm")
+                close_rain_event(station_key, state['last_rain'], state['event_start'], state['rain_at_start'])
+                state['is_raining'] = False
+                state['event_start'] = None
+            state['last_rain'] = rain_mm
+            state['rain_at_start'] = rain_mm
+            state['last_update'] = current_time
+            continue
 
         # DETECTAR INICIO DE LLUVIA
         if not state['is_raining'] and rain_increment >= RAIN_START_THRESHOLD:
@@ -204,12 +244,16 @@ def process_rain_data(batch_df, batch_id):
             time_since_last_update = (current_time - state['last_update']).total_seconds() / 60
             print(f"[DEBUG] Evento activo. Tiempo sin actualización: {time_since_last_update:.2f} min. Timeout: {NO_RAIN_TIMEOUT_MINUTES} min.")
 
-            # Si no hay incremento y ha pasado el tiempo de timeout, se cierra el evento
-            if rain_increment <= 0 and time_since_last_update >= NO_RAIN_TIMEOUT_MINUTES:
+            # Verificar duración máxima del evento (protección contra eventos atascados)
+            event_duration = (current_time - state['event_start']).total_seconds() / 60
+
+            # Cerrar si: timeout sin incremento O duración máxima excedida
+            if (rain_increment <= 0 and time_since_last_update >= NO_RAIN_TIMEOUT_MINUTES) or event_duration >= MAX_EVENT_DURATION_MINUTES:
                 accumulated = state['last_rain'] - state['rain_at_start']
-                print(f"\n✅ Fin de lluvia detectado en {station_name} por inactividad.")
+                reason = "duración máxima (12h)" if event_duration >= MAX_EVENT_DURATION_MINUTES else "inactividad"
+                print(f"\n✅ Fin de lluvia detectado en {station_name} por {reason}.")
                 print(f"   Total acumulado: {accumulated:.2f} mm")
-                print(f"   Tiempo sin lluvia: {time_since_last_update:.1f} minutos")
+                print(f"   Duración total: {event_duration:.0f} min | Tiempo sin lluvia: {time_since_last_update:.1f} min")
                 
                 close_rain_event(station_key, state['last_rain'], state['event_start'], state['rain_at_start'])
                 
