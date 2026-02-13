@@ -1,19 +1,41 @@
-from flask import Flask, render_template, request, jsonify, send_file
-from datetime import datetime, timedelta
 import os
 import time
-import pytz
-from dotenv import load_dotenv
-from weatherlink_client import WeatherLinkClient
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from datetime import datetime, timedelta
 from io import BytesIO
 
-# Cargar variables de entorno
+from dotenv import load_dotenv
+# Cargar variables de entorno PRIMERO
 load_dotenv()
 
+from flask import Flask, render_template, request, jsonify, send_file
+import pytz
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+
+from weatherlink_client import WeatherLinkClient
+
+# Inicializar Flask App
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# Inicializar Supabase
+try:
+    from supabase_api import SupabaseAPI
+    
+    supabase_url = os.getenv('SUPABASE_URL')
+    supabase_key = os.getenv('SUPABASE_KEY')
+
+    if not supabase_url or not supabase_key:
+        raise ValueError("SUPABASE_URL y SUPABASE_KEY no están definidas en el entorno.")
+
+    supabase = SupabaseAPI(supabase_url, supabase_key)
+    SUPABASE_ENABLED = True
+    print("✅ Supabase API inicializada correctamente.")
+
+except (ImportError, ValueError) as e:
+    print(f"⚠️  Supabase no disponible: {e}")
+    SUPABASE_ENABLED = False
+    supabase = None
 
 # Deshabilitar caché para HTML
 @app.after_request
@@ -23,19 +45,6 @@ def add_header(response):
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
     return response
-
-# Importar funciones de Supabase
-try:
-    from supabase_api import (
-        get_latest_readings, 
-        get_station_history, 
-        get_daily_summary,
-        get_all_stations_comparison
-    )
-    SUPABASE_ENABLED = True
-except ImportError:
-    SUPABASE_ENABLED = False
-    print("⚠️  Supabase no disponible - usando solo API directa de WeatherLink")
 
 # Configurar las 3 estaciones
 STATIONS = {
@@ -319,7 +328,7 @@ def api_supabase_latest():
     if not SUPABASE_ENABLED:
         return jsonify({'error': 'Supabase no configurado'}), 503
     
-    result = get_latest_readings()
+    result = supabase.get_latest_readings()
     if result['success']:
         return jsonify(result['data'])
     return jsonify({'error': result['error']}), 500
@@ -332,7 +341,7 @@ def api_supabase_history(station_key):
         return jsonify({'error': 'Supabase no configurado'}), 503
     
     hours = int(request.args.get('hours', 24))
-    result = get_station_history(station_key, hours)
+    result = supabase.get_station_history(station_key, hours)
     if result['success']:
         return jsonify(result['data'])
     return jsonify({'error': result['error']}), 500
@@ -345,7 +354,7 @@ def api_supabase_daily(station_key):
         return jsonify({'error': 'Supabase no configurado'}), 503
     
     days = int(request.args.get('days', 7))
-    result = get_daily_summary(station_key, days)
+    result = supabase.get_daily_summary(station_key, days)
     if result['success']:
         return jsonify(result['data'])
     return jsonify({'error': result['error']}), 500
@@ -357,7 +366,7 @@ def api_supabase_comparison():
     if not SUPABASE_ENABLED:
         return jsonify({'error': 'Supabase no configurado'}), 503
     
-    result = get_all_stations_comparison()
+    result = supabase.get_all_stations_comparison()
     if result['success']:
         return jsonify(result['data'])
     return jsonify({'error': result['error']}), 500
@@ -369,18 +378,10 @@ def api_rain_events_active():
     if not SUPABASE_ENABLED:
         return jsonify({'error': 'Supabase no configurado'}), 503
     
-    try:
-        import requests
-        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/active_rain_events"
-        headers = {
-            "apikey": os.getenv('SUPABASE_KEY'),
-            "Authorization": f"Bearer {os.getenv('SUPABASE_KEY')}",
-        }
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return jsonify({'success': True, 'data': response.json()})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    result = supabase.get_active_rain_events()
+    if result['success']:
+        return jsonify(result)
+    return jsonify(result), 500
 
 
 @app.route('/api/rain/events/history')
@@ -392,25 +393,10 @@ def api_rain_events_history():
     station_key = request.args.get('station_key')
     limit = request.args.get('limit', 10, type=int)
     
-    try:
-        import requests
-        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/rain_events"
-        headers = {
-            "apikey": os.getenv('SUPABASE_KEY'),
-            "Authorization": f"Bearer {os.getenv('SUPABASE_KEY')}",
-        }
-        params = {
-            'order': 'event_start.desc',
-            'limit': limit
-        }
-        if station_key:
-            params['station_key'] = f'eq.{station_key}'
-        
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        return jsonify({'success': True, 'data': response.json()})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    result = supabase.get_rain_events_history(station_key=station_key, limit=limit)
+    if result['success']:
+        return jsonify(result)
+    return jsonify(result), 500
 
 
 @app.route('/api/rain/accumulated')
@@ -419,88 +405,9 @@ def api_rain_accumulated():
     if not SUPABASE_ENABLED:
         return jsonify({'error': 'Supabase no configurado'}), 503
     
-    try:
-        import requests
-        from collections import defaultdict
-        from datetime import datetime, timedelta
-        
-        # Obtener todos los eventos de lluvia de las últimas 8 semanas
-        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/rain_events"
-        headers = {
-            "apikey": os.getenv('SUPABASE_KEY'),
-            "Authorization": f"Bearer {os.getenv('SUPABASE_KEY')}",
-        }
-        
-        # Fecha de hace 8 semanas
-        eight_weeks_ago = (datetime.now() - timedelta(weeks=8)).isoformat()
-        
-        params = {
-            'event_start': f'gte.{eight_weeks_ago}',
-            'order': 'event_start.desc',
-            'limit': 1000
-        }
-        
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        events = response.json()
-        
-        # Agrupar por estación, semana y día
-        by_week = defaultdict(lambda: defaultdict(float))  # {station: {week: total}}
-        by_day = defaultdict(lambda: defaultdict(float))   # {station: {date: total}}
-        
-        for event in events:
-            station_key = event['station_key']
-            station_name = event['station_name']
-            rain = event.get('rain_accumulated', 0) or 0
-            
-            # Parsear fecha de inicio
-            event_start = datetime.fromisoformat(event['event_start'].replace('Z', '+00:00'))
-            
-            # Calcular número de semana (formato: YY-WW)
-            year = event_start.year % 100  # Últimos 2 dígitos del año
-            week = event_start.isocalendar()[1]  # Número de semana
-            week_key = f"{year:02d}-{week:02d}"
-            
-            # Fecha del día (formato: YYYY-MM-DD)
-            day_key = event_start.strftime('%Y-%m-%d')
-            
-            # Acumular
-            by_week[station_key][week_key] += rain
-            by_day[station_key][day_key] += rain
-        
-        # Convertir a formato de respuesta
-        result = {
-            'by_week': {},
-            'by_day': {},
-            'stations': {}
-        }
-        
-        # Agregar nombres de estaciones
-        for station_key in STATIONS:
-            result['stations'][station_key] = STATIONS[station_key]['name']
-        
-        # Convertir defaultdict a dict normal
-        for station_key in by_week:
-            result['by_week'][station_key] = dict(by_week[station_key])
-        
-        for station_key in by_day:
-            result['by_day'][station_key] = dict(by_day[station_key])
-        
-        return jsonify({'success': True, 'data': result})
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/dashboard')
-def dashboard():
-    """Dashboard en tiempo real con datos de Supabase"""
-    if not SUPABASE_ENABLED:
-        return render_template('error.html', 
-                             message='Supabase no está configurado. Usa la vista principal.'), 503
-    
-    return render_template('dashboard.html', stations=STATIONS)
-
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    result = supabase.get_accumulated_rain()
+    if result['success']:
+        # Agregar nombres de estaciones al resultado
+        result['data']['stations'] = {key: STATIONS[key]['name'] for key in STATIONS}
+        return jsonify(result)
+    return jsonify(result), 500

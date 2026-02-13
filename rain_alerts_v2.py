@@ -85,7 +85,7 @@ def upsert_rain_event(event_data):
         return None
 
 
-def close_rain_event(station_key, rain_at_end, event_start):
+def close_rain_event(station_key, rain_at_end, event_start, rain_at_start=0.0):
     """Cerrar evento de lluvia activo"""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return
@@ -105,10 +105,14 @@ def close_rain_event(station_key, rain_at_end, event_start):
         # Calcular duración en minutos
         duration_minutes = int((event_end - event_start).total_seconds() / 60)
         
+        # Calcular lluvia acumulada
+        rain_accumulated = round(float(rain_at_end) - float(rain_at_start), 2) if isinstance(rain_at_end, (int, float)) else None
+        
         update_data = {
             "is_active": False,
             "event_end": event_end_iso,
             "rain_at_end": float(rain_at_end),
+            "rain_accumulated": rain_accumulated,
             "duration_minutes": duration_minutes,
             "updated_at": event_end_iso
         }
@@ -136,6 +140,8 @@ def process_rain_data(batch_df, batch_id):
     pandas_df = batch_df.toPandas()
     current_time = datetime.now()
     
+    print(f"\n--- Batch ID: {batch_id} | Hora: {current_time.strftime('%H:%M:%S')} ---")
+
     for _, row in pandas_df.iterrows():
         station_key = row['station_key']
         station_name = row['station_name']
@@ -145,6 +151,8 @@ def process_rain_data(batch_df, batch_id):
         if rain_mm is None:
             continue
         
+        print(f"\n[DEBUG] Procesando {station_name} ({station_key}) | Lluvia actual: {rain_mm:.2f} mm")
+
         # Inicializar estado si no existe
         if station_key not in station_states:
             station_states[station_key] = {
@@ -152,13 +160,18 @@ def process_rain_data(batch_df, batch_id):
                 'last_update': current_time,
                 'is_raining': False,
                 'event_start': None,
-                'rain_at_start': rain_mm
+                'rain_at_start': rain_mm,
+                'max_intensity': 0.0
             }
+            print(f"[DEBUG] Estado inicializado para {station_name}")
             continue
         
         state = station_states[station_key]
         rain_increment = rain_mm - state['last_rain']
         
+        print(f"[DEBUG] Estado actual: is_raining={state['is_raining']}, last_rain={state['last_rain']:.2f}, last_update={state['last_update'].strftime('%H:%M:%S')}")
+        print(f"[DEBUG] Incremento de lluvia: {rain_increment:.2f} mm")
+
         # DETECTAR INICIO DE LLUVIA
         if not state['is_raining'] and rain_increment >= RAIN_START_THRESHOLD:
             print(f"\n🌧️  ¡LLUVIA DETECTADA en {station_name}!")
@@ -186,49 +199,70 @@ def process_rain_data(batch_df, batch_id):
             if result:
                 print(f"   ✅ Evento registrado en base de datos (ID: {result.get('id')})")
         
-        # ACTUALIZAR EVENTO ACTIVO
-        elif state['is_raining'] and rain_increment > 0:
-            accumulated = rain_mm - state['rain_at_start']
-            duration = (current_time - state['event_start']).total_seconds() / 60
-            
-            print(f"🌧️  Lluvia continúa en {station_name}")
-            print(f"   Acumulado desde inicio: {accumulated:.2f} mm")
-            print(f"   Duración: {duration:.1f} minutos")
-            
-            # Actualizar en Supabase
-            event_data = {
-                'rain_accumulated': float(accumulated),
-                'rain_at_end': float(rain_mm),  # Actualizar también el valor final
-                'duration_minutes': int(duration),
-                'updated_at': current_time.isoformat()
-            }
-            
-            url = f"{SUPABASE_URL}/rest/v1/rain_events"
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json"
-            }
-            update_url = f"{url}?station_key=eq.{station_key}&is_active=eq.true"
-            requests.patch(update_url, headers=headers, json=event_data)
-        
-        # DETECTAR FIN DE LLUVIA (sin incremento por X minutos)
+        # Si está lloviendo, verificar si el evento debe continuar o cerrarse
         elif state['is_raining']:
-            time_since_last = (current_time - state['last_update']).total_seconds() / 60
-            
-            if rain_increment == 0 and time_since_last >= NO_RAIN_TIMEOUT_MINUTES:
-                accumulated = rain_mm - state['rain_at_start']
-                print(f"\n✅ Fin de lluvia en {station_name}")
-                print(f"   Total caído: {accumulated:.2f} mm")
-                print(f"   Duración: {(current_time - state['event_start']).total_seconds() / 60:.1f} min")
+            time_since_last_update = (current_time - state['last_update']).total_seconds() / 60
+            print(f"[DEBUG] Evento activo. Tiempo sin actualización: {time_since_last_update:.2f} min. Timeout: {NO_RAIN_TIMEOUT_MINUTES} min.")
+
+            # Si no hay incremento y ha pasado el tiempo de timeout, se cierra el evento
+            if rain_increment <= 0 and time_since_last_update >= NO_RAIN_TIMEOUT_MINUTES:
+                accumulated = state['last_rain'] - state['rain_at_start']
+                print(f"\n✅ Fin de lluvia detectado en {station_name} por inactividad.")
+                print(f"   Total acumulado: {accumulated:.2f} mm")
+                print(f"   Tiempo sin lluvia: {time_since_last_update:.1f} minutos")
                 
-                close_rain_event(station_key, rain_mm, state['event_start'])
+                close_rain_event(station_key, state['last_rain'], state['event_start'], state['rain_at_start'])
+                
+                # Reiniciar estado para el próximo evento
                 state['is_raining'] = False
                 state['event_start'] = None
+                state['rain_at_start'] = state['last_rain']
+
+            # Si hay un nuevo incremento, se actualiza el estado y Supabase
+            elif rain_increment > 0:
+                accumulated = rain_mm - state['rain_at_start']
+                duration = (current_time - state['event_start']).total_seconds() / 60
+                
+                print(f"🌧️  Lluvia continúa en {station_name}")
+                print(f"   Acumulado: {accumulated:.2f} mm, Duración: {duration:.1f} min")
+
+                # Actualizar estado
+                state['last_rain'] = rain_mm
+
+                # Actualizar evento en Supabase con datos en tiempo real
+                try:
+                    update_url = f"{SUPABASE_URL}/rest/v1/rain_events?station_key=eq.{station_key}&is_active=eq.true"
+                    update_headers = {
+                        "apikey": SUPABASE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                    update_data = {
+                        'rain_accumulated': float(accumulated),
+                        'max_intensity': float(max(rain_increment, state.get('max_intensity', 0))),
+                        'updated_at': current_time.isoformat()
+                    }
+                    state['max_intensity'] = update_data['max_intensity']
+                    requests.patch(update_url, headers=update_headers, json=update_data)
+                    print(f"   ✅ Evento actualizado en Supabase (acumulado: {accumulated:.2f} mm)")
+                except Exception as e:
+                    print(f"   ⚠️  Error actualizando evento: {e}")
+            
+            # Solo actualizar el temporizador cuando HAY incremento de lluvia
+            # Si no hay incremento, NO tocar last_update para que el timeout funcione
+            if state['is_raining'] and rain_increment > 0:
+                print(f"[DEBUG] Lluvia detectada, actualizando 'last_rain' y 'last_update' para {station_name}")
+                state['last_rain'] = rain_mm
+                state['last_update'] = current_time
+            elif state['is_raining']:
+                print(f"[DEBUG] Sin incremento de lluvia. Timer sin resetear para {station_name}. Última lluvia hace {(current_time - state['last_update']).total_seconds() / 60:.1f} min")
         
-        # Actualizar estado
-        state['last_rain'] = rain_mm
-        state['last_update'] = current_time
+        # Si no está lloviendo, solo se actualiza el valor de lluvia y el tiempo para la próxima comparación
+        else:
+            print(f"[DEBUG] No llueve. Actualizando 'last_rain' y 'last_update' para {station_name}")
+            state['last_rain'] = rain_mm
+            state['last_update'] = current_time
+
 
 
 def build_spark():

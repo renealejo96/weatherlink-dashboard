@@ -52,5 +52,17 @@ DEPLOYMENT.md
 *.zip
 *.tar.gz
 test_*.py
+debug_*.py
 weatherlink.service
 nginx_weatherlink.conf
+*.ps1
+setup-git.ps1
+move-docker-to-d.ps1
+restart_rain_alerts.ps1
+check_kafka.ps1
+update_rain_function.py
+upload-to-hostinger.ps1
+GIT-SETUP.md
+GITHUB-DEPLOY-GUIDE.md
+TESTING-LOCAL.md
+DEPLOYMENT-NOTES.md

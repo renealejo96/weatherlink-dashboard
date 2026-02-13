@@ -104,6 +104,25 @@ services:
     volumes:
       - ./logs:/app/logs
 
+  # Monitor de cierre de eventos de lluvia (respaldo cada 10 min)
+  rain-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rain_monitor_prod
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+    command: python close_old_rain_events.py 30 --loop 10
+    depends_on:
+      - rain-alerts
+    networks:
+      - weatherlink_network
+    volumes:
+      - ./logs:/app/logs
+
   # Flask Application
   weatherlink:
     build:

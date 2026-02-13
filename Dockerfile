@@ -6,7 +6,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+    JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
+    PYTHONPATH=/app
 
 # Crear directorio de trabajo
 WORKDIR /app

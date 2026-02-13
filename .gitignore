@@ -23,3 +23,12 @@ build/
 *.egg-info/
 weatherlink.zip
 nginx/ssl/*.pem
+
+# Local/debug scripts
+debug_*.py
+test_*.py
+setup-git.ps1
+move-docker-to-d.ps1
+restart_rain_alerts.ps1
+check_kafka.ps1
+update_rain_function.py
