@@ -527,3 +527,48 @@ h1, h2, h3, h4, h5, h6, .navbar-brand {
     color: #e2e8f0 !important;
     opacity: 0.8;
 }
+
+/* DataTables and Pagination overrides for Dark Mode */
+.dataTables_wrapper label {
+    color: #94a3b8 !important;
+    font-size: 0.85rem !important;
+    margin-bottom: 8px !important;
+}
+
+.dataTables_wrapper .dataTables_filter label input {
+    margin-bottom: 0 !important;
+}
+
+/* Glassmorphic Pagination for Bootstrap 5 DataTables */
+.pagination {
+    margin-bottom: 0 !important;
+    gap: 4px;
+}
+.page-item .page-link {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    color: #cbd5e1 !important;
+    padding: 8px 16px !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+}
+.page-item:first-child .page-link,
+.page-item:last-child .page-link {
+    border-radius: 8px !important;
+}
+.page-item .page-link:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #ffffff !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+}
+.page-item.active .page-link {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
+    border-color: transparent !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 10px rgba(79, 172, 254, 0.2) !important;
+}
+.page-item.disabled .page-link {
+    background: rgba(255, 255, 255, 0.01) !important;
+    color: #64748b !important;
+    border-color: rgba(255, 255, 255, 0.04) !important;
+}

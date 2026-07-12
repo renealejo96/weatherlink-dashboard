@@ -105,7 +105,16 @@ def close_old_events(minutes_threshold=30):
         should_close = not rain_still_active and minutes_since_update >= minutes_threshold
         
         if should_close:
-            rain_accumulated = round(latest_rain - rain_at_start, 2) if latest_rain is not None else event.get('rain_accumulated')
+            # Asegurar que el acumulado no se sobrescriba con valores incorrectos (como 0 o negativos) debido a resets de acumulador
+            existing_accumulated = float(event.get('rain_accumulated') or 0)
+            calculated_accumulated = round(latest_rain - rain_at_start, 2) if (latest_rain is not None and latest_rain >= rain_at_start) else 0.0
+            
+            # Usar el máximo entre el acumulado que ya estaba registrado y el calculado
+            rain_accumulated = max(existing_accumulated, calculated_accumulated)
+            
+            # Si sigue siendo 0 o menor, asegurar un mínimo de 0.10 mm
+            if rain_accumulated <= 0:
+                rain_accumulated = 0.10
             event_end = updated_at  # El evento terminó cuando se actualizó por última vez
             duration = (update_time - start_time).total_seconds() / 60
             

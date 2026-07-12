@@ -108,6 +108,8 @@ def close_rain_event(station_key, rain_at_end, event_start, rain_at_start=0.0):
         
         # Calcular lluvia acumulada
         rain_accumulated = round(float(rain_at_end) - float(rain_at_start), 2) if isinstance(rain_at_end, (int, float)) else None
+        if rain_accumulated is not None and rain_accumulated <= 0:
+            rain_accumulated = 0.10  # Forzar mínimo de 0.1mm si el cálculo da 0 o menor
         
         update_data = {
             "is_active": False,
@@ -197,11 +199,13 @@ def process_rain_data(batch_df, batch_id):
         print(f"[DEBUG] Estado actual: is_raining={state['is_raining']}, last_rain={state['last_rain']:.2f}, last_update={state['last_update'].strftime('%H:%M:%S')}")
         print(f"[DEBUG] Incremento de lluvia: {rain_increment:.2f} mm")
 
-        # DETECTAR RESET DEL ACUMULADOR DIARIO (valor cae significativamente)
-        if rain_increment < -1.0:
-            print(f"[DEBUG] ⚠️  Reset de acumulador detectado para {station_name} (incremento: {rain_increment:.2f} mm)")
+        # DETECTAR RESET DEL ACUMULADOR DIARIO (cualquier descenso en el acumulador de lluvia)
+        if rain_mm < state['last_rain']:
+            print(f"[DEBUG] ⚠️  Reset de acumulador detectado para {station_name} ({state['last_rain']:.2f} mm -> {rain_mm:.2f} mm)")
             if state['is_raining']:
                 accumulated = state['last_rain'] - state['rain_at_start']
+                if accumulated <= 0:
+                    accumulated = 0.10
                 print(f"\n✅ Cerrando evento de lluvia en {station_name} por reset de acumulador.")
                 print(f"   Total acumulado: {accumulated:.2f} mm")
                 close_rain_event(station_key, state['last_rain'], state['event_start'], state['rain_at_start'])
