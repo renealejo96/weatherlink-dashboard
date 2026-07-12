@@ -173,9 +173,8 @@
             if (!minutes) return '-';
             const hours = Math.floor(minutes / 60);
             const mins = Math.floor(minutes % 60);
-            return hours > 0 
-                ? `<span class="badge bg-white bg-opacity-5 border border-white border-opacity-10 text-light px-2.5 py-1.5 rounded">${hours}h ${mins}m</span>` 
-                : `<span class="badge bg-white bg-opacity-5 border border-white border-opacity-10 text-light px-2.5 py-1.5 rounded">${mins}m</span>`;
+            const text = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+            return `<span class="badge text-white px-2.5 py-1.5 rounded" style="background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);">${text}</span>`;
         }
 
         async function loadActiveEvents() {
