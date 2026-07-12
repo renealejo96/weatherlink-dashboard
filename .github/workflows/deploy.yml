@@ -1,0 +1,30 @@
+name: Deploy to Hostinger VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOSTINGER_IP }}
+          username: ${{ secrets.HOSTINGER_USERNAME }}
+          password: ${{ secrets.HOSTINGER_PASSWORD }}
+          port: ${{ secrets.HOSTINGER_PORT }}
+          script: |
+            # 1. Navegar al directorio del proyecto en Hostinger
+            cd /var/www/weatherlink
+            
+            # 2. Descargar los últimos cambios desde GitHub
+            git pull origin main
+            
+            # 3. Dar permisos de ejecución y correr el script de despliegue
+            chmod +x deploy-hostinger.sh
+            sudo ./deploy-hostinger.sh
+            
+            echo "¡Despliegue completado exitosamente!"

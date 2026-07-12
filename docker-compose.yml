@@ -13,6 +13,9 @@ services:
     volumes:
       # Montar logs para persistencia
       - ./logs:/app/logs
+      # Montar plantillas y estáticos para desarrollo local en tiempo real
+      - ./templates:/app/templates
+      - ./static:/app/static
     networks:
       - weatherlink_network
     healthcheck:

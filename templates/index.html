@@ -4,155 +4,65 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WeatherLink Dashboard</title>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .station-card {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            transition: transform 0.3s;
-        }
-        .station-card:hover {
-            transform: translateY(-5px);
-        }
-        .station-header {
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
-        .data-item {
-            padding: 10px;
-            margin: 5px 0;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-        .loading {
-            text-align: center;
-            padding: 20px;
-        }
-        .btn-custom {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            color: white;
-        }
-        .btn-custom:hover {
-            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-            color: white;
-        }
-        .navbar-custom {
-            background: rgba(255,255,255,0.95);
-            backdrop-filter: blur(10px);
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .rain-alert {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            color: white;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { box-shadow: 0 10px 30px rgba(79, 172, 254, 0.3); }
-            50% { box-shadow: 0 10px 40px rgba(79, 172, 254, 0.6); }
-        }
-        .rain-history-card {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-        .event-badge {
-            display: inline-block;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 0.85em;
-            font-weight: bold;
-        }
-        .event-active {
-            background: #28a745;
-            color: white;
-        }
-        .event-closed {
-            background: #6c757d;
-            color: white;
-        }
-    </style>
+    
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="/static/css/theme.css">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-light navbar-custom mb-4">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/"><i class="fas fa-cloud-sun"></i> WeatherLink Dashboard</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+    <nav class="navbar navbar-expand-lg navbar-custom mb-5">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-cloud-sun me-2 text-primary"></i> <strong>Florsani</strong>
+            </a>
+            <button class="navbar-toggler bg-light" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/rain/events"><i class="fas fa-cloud-rain"></i> Eventos de Lluvia</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/compare">Comparar Estaciones</a>
-                    </li>
+                    <li class="nav-item"><a class="nav-link active" href="/"><i class="fas fa-chart-pie me-1"></i> Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/rain/events"><i class="fas fa-tint me-1"></i> Lluvia</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/compare"><i class="fas fa-balance-scale me-1"></i> Comparativa</a></li>
                 </ul>
             </div>
         </div>
     </nav>
 
-    <div class="container">
-        <div class="text-center mb-4">
-            <h1 class="text-white"><i class="fas fa-broadcast-tower"></i> Estaciones Meteorológicas</h1>
-            <p class="text-white">Monitoreo en tiempo real de las 3 estaciones</p>
+    <div class="container px-4">
+        <div class="text-center mb-5">
+            <h1 class="display-4 fw-bold text-white mb-2"><i class="fas fa-broadcast-tower text-info"></i> Estaciones Meteorológicas</h1>
+            <p class="lead text-light opacity-75">Monitoreo en tiempo real de las 3 estaciones</p>
         </div>
 
         <!-- Eventos de Lluvia Activos -->
         <div id="rain-alerts-container"></div>
 
-        <!-- Historial de Eventos de Lluvia -->
-        <div class="rain-history-card">
-            <h4 class="mb-3"><i class="fas fa-cloud-rain"></i> Historial de Eventos de Lluvia</h4>
-            <div id="rain-history">
-                <div class="text-center">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Cargando...</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row">
+        <div class="row g-4 mt-2">
             {% for key, station in stations.items() %}
-            <div class="col-md-4">
-                <div class="station-card">
-                    <div class="station-header">
-                        <h3><i class="fas fa-map-marker-alt text-primary"></i> {{ station.name }}</h3>
-                        <small class="text-muted">ID: {{ station.station_id }}</small>
+            <div class="col-md-6 col-lg-4">
+                <div class="glass-card h-100 d-flex flex-column p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4 pb-3 border-bottom border-secondary border-opacity-10">
+                        <h3 class="m-0 fw-bold fs-4"><i class="fas fa-map-marker-alt text-primary me-2"></i> {{ station.name }}</h3>
+                        <span class="badge bg-secondary rounded-pill bg-opacity-25 text-white">ID: {{ station.station_id }}</span>
                     </div>
                     
-                    <div id="current-{{ key }}" class="current-data">
-                        <div class="loading">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Cargando...</span>
-                            </div>
+                    <div id="current-{{ key }}" class="current-data flex-grow-1">
+                        <div class="loading py-5 text-center">
+                            <div class="spinner-border text-primary" style="width: 2.5rem; height: 2.5rem;" role="status"></div>
                         </div>
                     </div>
                     
-                    <div class="mt-3">
-                        <a href="/station/{{ key }}" class="btn btn-custom w-100">
-                            <i class="fas fa-chart-line"></i> Ver Gráficos Detallados
+                    <div class="mt-4 pt-3 border-top border-secondary border-opacity-10 text-center">
+                        <a href="/station/{{ key }}" class="btn-custom w-100">
+                            <i class="fas fa-chart-line me-1"></i> Ver Gráficos Detallados
                         </a>
                     </div>
                 </div>
@@ -171,101 +81,96 @@
                 
                 if (data.error) {
                     document.getElementById(`current-${stationKey}`).innerHTML = 
-                        `<div class="alert alert-danger">Error: ${data.error}</div>`;
+                        `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 text-danger rounded-3 m-0">Error: ${data.error}</div>`;
                     return;
                 }
                 
-                // Convertir unidades
                 const tempC = data.temperature ? ((data.temperature - 32) * 5 / 9).toFixed(1) : null;
                 const windKmh = data.wind_speed ? (data.wind_speed * 1.60934).toFixed(1) : null;
-                
-                // Lluvia: el backend ahora entrega lluvia en mm, sin necesidad de heurísticas
                 const rainMm = (data.rain_rate !== null && data.rain_rate !== undefined) ? data.rain_rate : 0;
                 
-                // Formatear datos
                 const html = `
-                    <div class="data-item">
-                        <i class="fas fa-thermometer-half text-danger"></i>
-                        <strong>Temperatura:</strong> ${tempC ? tempC + '°C' : 'N/A'}
+                    <div class="metric-grid">
+                        <div class="metric-tile tile-temp">
+                            <i class="fas fa-thermometer-half metric-icon"></i>
+                            <span class="metric-value">${tempC ? tempC + '°C' : 'N/A'}</span>
+                            <span class="metric-label">Temperatura</span>
+                        </div>
+                        <div class="metric-tile tile-humidity">
+                            <i class="fas fa-tint metric-icon"></i>
+                            <span class="metric-value">${data.humidity ? data.humidity.toFixed(1) + '%' : 'N/A'}</span>
+                            <span class="metric-label">Humedad</span>
+                        </div>
+                        <div class="metric-tile tile-wind">
+                            <i class="fas fa-wind metric-icon"></i>
+                            <span class="metric-value">${windKmh ? windKmh + ' km/h' : 'N/A'}</span>
+                            <span class="metric-label">Viento</span>
+                        </div>
+                        <div class="metric-tile tile-rain ${rainMm > 0 ? 'bg-primary bg-opacity-10' : ''}">
+                            <i class="fas fa-cloud-rain metric-icon"></i>
+                            <span class="metric-value">${rainMm ? rainMm.toFixed(2) + ' mm' : '0.00 mm'}</span>
+                            <span class="metric-label">Lluvia Hoy</span>
+                        </div>
+                        <div class="metric-tile tile-solar">
+                            <i class="fas fa-sun metric-icon"></i>
+                            <span class="metric-value">${data.solar_radiation !== null && data.solar_radiation !== undefined ? data.solar_radiation + ' W/m²' : 'N/A'}</span>
+                            <span class="metric-label">Rad. Solar</span>
+                        </div>
+                        <div class="metric-tile tile-dpv">
+                            <i class="fas fa-chart-line metric-icon"></i>
+                            <span class="metric-value">${data.vpd !== null && data.vpd !== undefined ? data.vpd + ' kPa' : 'N/A'}</span>
+                            <span class="metric-label">DPV</span>
+                        </div>
                     </div>
-                    <div class="data-item">
-                        <i class="fas fa-tint text-primary"></i>
-                        <strong>Humedad:</strong> ${data.humidity ? data.humidity.toFixed(1) + '%' : 'N/A'}
-                    </div>
-                    <div class="data-item">
-                        <i class="fas fa-wind text-info"></i>
-                        <strong>Viento:</strong> ${windKmh ? windKmh + ' km/h' : 'N/A'}
-                    </div>
-                    <div class="data-item">
-                        <i class="fas fa-cloud-rain text-secondary"></i>
-                        <strong>Lluvia Hoy:</strong> ${rainMm ? rainMm.toFixed(2) + ' mm' : '0.00 mm'}
-                    </div>
-                    <div class="data-item">
-                        <i class="fas fa-sun text-warning"></i>
-                        <strong>Radiación Solar:</strong> ${data.solar_radiation ? data.solar_radiation + ' W/m²' : 'N/A'}
-                    </div>
-                    <div class="data-item">
-                        <i class="fas fa-chart-line text-success"></i>
-                        <strong>DPV:</strong> ${data.vpd ? data.vpd + ' kPa' : 'N/A'}
-                    </div>
-                    <div class="text-muted mt-2" style="font-size: 0.85em;">
-                        <i class="fas fa-clock"></i> Última actualización: ${data.timestamp ? new Date(data.timestamp * 1000).toLocaleString('es-ES') : 'N/A'}
+                    <div class="text-muted mt-3 text-center" style="font-size: 0.8em; opacity: 0.7;">
+                        <i class="fas fa-sync-alt me-1"></i> Actualizado: ${data.timestamp ? new Date(data.timestamp * 1000).toLocaleString('es-ES') : 'N/A'}
                     </div>
                 `;
                 
                 document.getElementById(`current-${stationKey}`).innerHTML = html;
             } catch (error) {
                 document.getElementById(`current-${stationKey}`).innerHTML = 
-                    `<div class="alert alert-danger">Error al cargar datos: ${error.message}</div>`;
+                    `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 text-danger rounded-3 m-0">Error al cargar datos: ${error.message}</div>`;
             }
         }
         
-        // Cargar datos de todas las estaciones
         const stations = {{ stations.keys() | list | tojson }};
         stations.forEach(station => loadCurrentData(station));
-        
-        // Actualizar cada 5 minutos
-        setInterval(() => {
-            stations.forEach(station => loadCurrentData(station));
-        }, 300000);
+        setInterval(() => stations.forEach(station => loadCurrentData(station)), 60000);
 
-        // Cargar eventos de lluvia activos
         async function loadActiveRainEvents() {
             try {
                 const response = await fetch('/api/rain/events/active');
                 const data = await response.json();
-                
                 const container = document.getElementById('rain-alerts-container');
                 
                 if (data.success && data.data.length > 0) {
                     let html = '';
                     data.data.forEach(event => {
                         const duration = Math.floor(event.duration_minutes);
-                        const hours = Math.floor(duration / 60);
-                        const mins = duration % 60;
-                        const timeStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
+                        const timeStr = duration >= 60 ? `${Math.floor(duration/60)}h ${duration%60}m` : `${duration}m`;
                         
                         html += `
-                            <div class="rain-alert">
+                            <div class="active-rain-card mb-4">
                                 <div class="row align-items-center">
                                     <div class="col-md-8">
-                                        <h3><i class="fas fa-cloud-showers-heavy"></i> ¡Lluvia Activa!</h3>
-                                        <h4>${event.station_name} (${event.station_key})</h4>
-                                        <p class="mb-0">
-                                            <strong>Acumulado en este evento:</strong> ${event.rain_accumulated.toFixed(2)} mm
-                                            <br>
-                                            <strong>Duración:</strong> ${timeStr}
-                                            <br>
-                                            <strong>Intensidad máxima:</strong> ${event.max_intensity.toFixed(2)} mm
-                                        </p>
-                                    </div>
-                                    <div class="col-md-4 text-center">
-                                        <div style="font-size: 4em;">
-                                            <i class="fas fa-cloud-rain"></i>
+                                        <h3 class="fw-bold text-white mb-2">
+                                            <i class="fas fa-cloud-showers-heavy text-primary me-2"></i> ¡Lluvia Detectada!
+                                        </h3>
+                                        <h4 class="mb-3 fs-5 text-light opacity-90">${event.station_name}</h4>
+                                        <div class="d-flex gap-4">
+                                            <div>
+                                                <small class="text-white-50 d-block text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Acumulado</small>
+                                                <span class="fs-4 fw-bold" style="color: var(--color-rain);">${event.rain_accumulated.toFixed(2)} mm</span>
+                                            </div>
+                                            <div>
+                                                <small class="text-white-50 d-block text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Duración</small>
+                                                <span class="fs-4 fw-bold text-light">${timeStr}</span>
+                                            </div>
                                         </div>
-                                        <span class="event-badge event-active">
-                                            <i class="fas fa-circle-notch fa-spin"></i> En curso
-                                        </span>
+                                    </div>
+                                    <div class="col-md-4 text-end d-none d-md-block">
+                                        <i class="fas fa-cloud-rain text-primary opacity-50" style="font-size: 5.5rem;"></i>
                                     </div>
                                 </div>
                             </div>
@@ -275,79 +180,11 @@
                 } else {
                     container.innerHTML = '';
                 }
-            } catch (error) {
-                console.error('Error al cargar eventos activos:', error);
-            }
+            } catch (error) { console.error(error); }
         }
 
-        // Cargar historial de eventos de lluvia
-        async function loadRainHistory() {
-            try {
-                const response = await fetch('/api/rain/events/history?limit=10');
-                const data = await response.json();
-                
-                const container = document.getElementById('rain-history');
-                
-                if (data.success && data.data.length > 0) {
-                    let html = '<div class="table-responsive"><table class="table table-hover">';
-                    html += `
-                        <thead>
-                            <tr>
-                                <th>Estación</th>
-                                <th>Inicio</th>
-                                <th>Fin</th>
-                                <th>Duración</th>
-                                <th>Acumulado</th>
-                                <th>Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                    `;
-                    
-                    data.data.forEach(event => {
-                        const startDate = new Date(event.event_start);
-                        const endDate = event.event_end ? new Date(event.event_end) : null;
-                        const duration = event.duration_minutes || 0;
-                        const hours = Math.floor(duration / 60);
-                        const mins = Math.floor(duration % 60);
-                        const durationStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
-                        
-                        html += `
-                            <tr>
-                                <td><strong>${event.station_name}</strong><br><small class="text-muted">${event.station_key}</small></td>
-                                <td>${startDate.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}</td>
-                                <td>${endDate ? endDate.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
-                                <td>${durationStr}</td>
-                                <td><strong>${event.rain_accumulated ? event.rain_accumulated.toFixed(2) : '0.00'} mm</strong></td>
-                                <td>
-                                    <span class="event-badge ${event.is_active ? 'event-active' : 'event-closed'}">
-                                        ${event.is_active ? '<i class="fas fa-circle-notch fa-spin"></i> Activo' : '<i class="fas fa-check"></i> Finalizado'}
-                                    </span>
-                                </td>
-                            </tr>
-                        `;
-                    });
-                    
-                    html += '</tbody></table></div>';
-                    container.innerHTML = html;
-                } else {
-                    container.innerHTML = '<div class="alert alert-info"><i class="fas fa-info-circle"></i> No hay eventos de lluvia registrados</div>';
-                }
-            } catch (error) {
-                container.innerHTML = '<div class="alert alert-danger">Error al cargar el historial</div>';
-                console.error('Error al cargar historial:', error);
-            }
-        }
-
-        // Cargar eventos de lluvia al inicio
         loadActiveRainEvents();
-        loadRainHistory();
-
-        // Actualizar eventos de lluvia cada 30 segundos
-        setInterval(() => {
-            loadActiveRainEvents();
-            loadRainHistory();
-        }, 30000);
+        setInterval(loadActiveRainEvents, 30000);
     </script>
 </body>
 </html>
