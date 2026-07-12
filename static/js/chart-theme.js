@@ -51,7 +51,9 @@ if (typeof Chart !== 'undefined') {
 const ChartTheme = {
     // Generate linear gradient fading to transparent for line charts fill
     getGradient(ctx, colorHex, height = 300) {
-        const gradient = ctx.createLinearGradient(0, 0, 0, height);
+        // Handle if ctx is Canvas element or CanvasRenderingContext2D
+        const drawingContext = ctx.getContext ? ctx.getContext('2d') : ctx;
+        const gradient = drawingContext.createLinearGradient(0, 0, 0, height);
         gradient.addColorStop(0, colorHex + '35'); // 20% opacity at top
         gradient.addColorStop(0.5, colorHex + '0e'); // 5% opacity in middle
         gradient.addColorStop(1, colorHex + '00');  // 0% opacity at bottom
