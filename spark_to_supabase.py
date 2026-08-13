@@ -95,6 +95,10 @@ def save_to_supabase(batch_df, batch_id):
                 'dew_point': safe_float(row['dew_point']),
                 'rain_mm': safe_float(row['rain_mm']),
                 'rain_field': str(row['rain_field']) if row['rain_field'] is not None else None,
+                'rain_rate_mm_h': safe_float(row['rain_rate_mm_h']),
+                'rain_daily_mm': safe_float(row['rain_daily_mm']),
+                'rain_last_15_min_mm': safe_float(row['rain_last_15_min_mm']),
+                'is_raining': bool(row['is_raining']) if row['is_raining'] is not None else False,
                 'solar_radiation': safe_float(row['solar_radiation']),
                 'uv_index': safe_float(row['uv_index']),
                 'wind_speed': safe_float(row['wind_speed']),
@@ -151,6 +155,10 @@ def main():
         StructField('rain_rate', DoubleType(), True),
         StructField('rain_rate_mm', DoubleType(), True),
         StructField('rain_rate_field', StringType(), True),
+        StructField('rain_daily_mm', DoubleType(), True),
+        StructField('rain_rate_mm_h', DoubleType(), True),
+        StructField('rain_last_15_min_mm', DoubleType(), True),
+        StructField('is_raining', BooleanType(), True),
         StructField('solar_radiation', DoubleType(), True),
         StructField('uv_index', DoubleType(), True),
         StructField('dew_point', DoubleType(), True),
@@ -180,6 +188,10 @@ def main():
         .withColumn('humidity', col('payload.humidity'))
         .withColumn('rain_mm', col('payload.rain_rate_mm'))
         .withColumn('rain_field', col('payload.rain_rate_field'))
+        .withColumn('rain_daily_mm', col('payload.rain_daily_mm'))
+        .withColumn('rain_rate_mm_h', col('payload.rain_rate_mm_h'))
+        .withColumn('rain_last_15_min_mm', col('payload.rain_last_15_min_mm'))
+        .withColumn('is_raining', col('payload.is_raining'))
         .withColumn('solar_radiation', col('payload.solar_radiation'))
         .withColumn('uv_index', col('payload.uv_index'))
         .withColumn('dew_point', col('payload.dew_point'))
@@ -206,6 +218,10 @@ def main():
         'dew_point',
         'rain_mm',
         'rain_field',
+        'rain_daily_mm',
+        'rain_rate_mm_h',
+        'rain_last_15_min_mm',
+        'is_raining',
         'solar_radiation',
         'uv_index',
         'wind_speed',

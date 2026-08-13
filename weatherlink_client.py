@@ -53,6 +53,71 @@ class WeatherLinkClient:
         
         return round(vpd, 2)
     
+    def _extract_rain_metrics(self, sensor_data):
+        """Extrae de forma separada y precisa las diferentes métricas de lluvia de WeatherLink:
+        - rain_daily_mm: Acumulado del día en mm
+        - rain_rate_mm_h: Tasa o intensidad instantánea en mm/hora
+        - rain_last_15_min_mm: Lluvia en últimos 15 min en mm
+        - rain_last_60_min_mm: Lluvia en últimos 60 min en mm
+        - is_raining: Booleano indicando si hay lluvia activa
+        """
+        # 1. Tasa / Intensidad instantánea (mm/h)
+        rate_mm_keys = ["rain_rate_last_mm", "rain_rate_mm", "rain_rate_hi_mm"]
+        rate_in_keys = ["rain_rate_last_in", "rain_rate_in", "rain_rate_last"]
+        rain_rate_mm_h = None
+        for k in rate_mm_keys:
+            if k in sensor_data and sensor_data[k] is not None:
+                rain_rate_mm_h = float(sensor_data[k])
+                break
+        if rain_rate_mm_h is None:
+            for k in rate_in_keys:
+                if k in sensor_data and sensor_data[k] is not None:
+                    rain_rate_mm_h = float(sensor_data[k]) * 25.4
+                    break
+        if rain_rate_mm_h is None:
+            rain_rate_mm_h = 0.0
+
+        # 2. Acumulado diario (mm)
+        daily_mm_keys = ["rainfall_daily_mm", "rain_day_mm", "rainfall_mm"]
+        daily_in_keys = ["rainfall_daily_in", "rain_day_in", "rainfall_in"]
+        rain_daily_mm = None
+        for k in daily_mm_keys:
+            if k in sensor_data and sensor_data[k] is not None:
+                rain_daily_mm = float(sensor_data[k])
+                break
+        if rain_daily_mm is None:
+            for k in daily_in_keys:
+                if k in sensor_data and sensor_data[k] is not None:
+                    rain_daily_mm = float(sensor_data[k]) * 25.4
+                    break
+
+        # 3. Lluvia últimos 15 min
+        rain_15m_mm = None
+        if "rainfall_last_15_min_mm" in sensor_data and sensor_data["rainfall_last_15_min_mm"] is not None:
+            rain_15m_mm = float(sensor_data["rainfall_last_15_min_mm"])
+        elif "rainfall_last_15_min_in" in sensor_data and sensor_data["rainfall_last_15_min_in"] is not None:
+            rain_15m_mm = float(sensor_data["rainfall_last_15_min_in"]) * 25.4
+        elif "rainfall_last_15_min" in sensor_data and sensor_data["rainfall_last_15_min"] is not None:
+            rain_15m_mm = float(sensor_data["rainfall_last_15_min"])
+
+        # 4. Lluvia últimos 60 min
+        rain_60m_mm = None
+        if "rainfall_last_60_min_mm" in sensor_data and sensor_data["rainfall_last_60_min_mm"] is not None:
+            rain_60m_mm = float(sensor_data["rainfall_last_60_min_mm"])
+        elif "rainfall_last_60_min_in" in sensor_data and sensor_data["rainfall_last_60_min_in"] is not None:
+            rain_60m_mm = float(sensor_data["rainfall_last_60_min_in"]) * 25.4
+
+        # 5. Flag is_raining
+        is_raining = (rain_rate_mm_h > 0) or (rain_15m_mm is not None and rain_15m_mm > 0)
+
+        return {
+            'rain_daily_mm': rain_daily_mm,
+            'rain_rate_mm_h': round(rain_rate_mm_h, 2) if rain_rate_mm_h is not None else 0.0,
+            'rain_last_15_min_mm': round(rain_15m_mm, 2) if rain_15m_mm is not None else None,
+            'rain_last_60_min_mm': round(rain_60m_mm, 2) if rain_60m_mm is not None else None,
+            'is_raining': is_raining
+        }
+
     def _rain_to_mm(self, sensor_data):
         """Devuelve lluvia en mm detectando automáticamente la unidad."""
         mm_keys = [
@@ -108,7 +173,8 @@ class WeatherLinkClient:
                         temp = sensor_data.get('temp') or sensor_data.get('temp_out')
                         hum = sensor_data.get('hum') or sensor_data.get('hum_out')
 
-                        # Para lluvia, priorizar lluvia diaria acumulada (normalizada a mm)
+                        # Extraer métricas detalladas de lluvia
+                        rain_metrics = self._extract_rain_metrics(sensor_data)
                         rain_mm, rain_field, rain_unit = self._rain_to_mm(sensor_data)
                         
                         weather_data.update({
@@ -124,6 +190,11 @@ class WeatherLinkClient:
                             'rain_rate_mm': rain_mm,
                             'rain_rate_field': rain_field,
                             'rain_rate_unit': rain_unit,
+                            'rain_daily_mm': rain_metrics['rain_daily_mm'],
+                            'rain_rate_mm_h': rain_metrics['rain_rate_mm_h'],
+                            'rain_last_15_min_mm': rain_metrics['rain_last_15_min_mm'],
+                            'rain_last_60_min_mm': rain_metrics['rain_last_60_min_mm'],
+                            'is_raining': rain_metrics['is_raining'],
                             'solar_radiation': sensor_data.get('solar_rad'),
                             'uv_index': sensor_data.get('uv_index') or sensor_data.get('uv'),
                             'dew_point': sensor_data.get('dew_point'),

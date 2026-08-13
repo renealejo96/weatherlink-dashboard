@@ -216,16 +216,20 @@ def process_rain_data(batch_df, batch_id):
             state['last_update'] = current_time
             continue
 
+        rain_rate_mm_h = safe_float(row.get('rain_rate_mm_h')) or 0.0
+        current_intensity = max(rain_rate_mm_h, rain_increment)
+
         # DETECTAR INICIO DE LLUVIA
-        if not state['is_raining'] and rain_increment >= RAIN_START_THRESHOLD:
+        if not state['is_raining'] and (rain_increment >= RAIN_START_THRESHOLD or rain_rate_mm_h > 0):
             print(f"\n🌧️  ¡LLUVIA DETECTADA en {station_name}!")
-            print(f"   Incremento: {rain_increment:.2f} mm")
+            print(f"   Incremento: {rain_increment:.2f} mm | Tasa instantánea: {rain_rate_mm_h:.2f} mm/h")
             print(f"   Valor anterior: {state['last_rain']:.2f} mm")
             print(f"   Valor actual: {rain_mm:.2f} mm")
             
             state['is_raining'] = True
             state['event_start'] = current_time
             state['rain_at_start'] = state['last_rain']  # Valor ANTES del incremento
+            state['max_intensity'] = current_intensity
             
             # Guardar en Supabase
             event_data = {
@@ -234,8 +238,8 @@ def process_rain_data(batch_df, batch_id):
                 'event_start': state['event_start'].isoformat(),
                 'is_active': True,
                 'rain_at_start': float(state['rain_at_start']),
-                'rain_accumulated': float(rain_increment),
-                'max_intensity': float(rain_increment),  # Por ahora
+                'rain_accumulated': float(rain_increment if rain_increment > 0 else 0.1),
+                'max_intensity': float(current_intensity),
                 'updated_at': current_time.isoformat()
             }
             
@@ -252,7 +256,7 @@ def process_rain_data(batch_df, batch_id):
             event_duration = (current_time - state['event_start']).total_seconds() / 60
 
             # Cerrar si: timeout sin incremento O duración máxima excedida
-            if (rain_increment <= 0 and time_since_last_update >= NO_RAIN_TIMEOUT_MINUTES) or event_duration >= MAX_EVENT_DURATION_MINUTES:
+            if (rain_increment <= 0 and rain_rate_mm_h <= 0 and time_since_last_update >= NO_RAIN_TIMEOUT_MINUTES) or event_duration >= MAX_EVENT_DURATION_MINUTES:
                 accumulated = state['last_rain'] - state['rain_at_start']
                 reason = "duración máxima (12h)" if event_duration >= MAX_EVENT_DURATION_MINUTES else "inactividad"
                 print(f"\n✅ Fin de lluvia detectado en {station_name} por {reason}.")
@@ -266,13 +270,15 @@ def process_rain_data(batch_df, batch_id):
                 state['event_start'] = None
                 state['rain_at_start'] = state['last_rain']
 
-            # Si hay un nuevo incremento, se actualiza el estado y Supabase
-            elif rain_increment > 0:
+            # Si hay un nuevo incremento o tasa positiva, se actualiza el estado y Supabase
+            elif rain_increment > 0 or rain_rate_mm_h > 0:
                 accumulated = rain_mm - state['rain_at_start']
                 duration = (current_time - state['event_start']).total_seconds() / 60
+                new_max_intensity = float(max(current_intensity, state.get('max_intensity', 0)))
+                state['max_intensity'] = new_max_intensity
                 
                 print(f"🌧️  Lluvia continúa en {station_name}")
-                print(f"   Acumulado: {accumulated:.2f} mm, Duración: {duration:.1f} min")
+                print(f"   Acumulado: {accumulated:.2f} mm, Intensidad: {current_intensity:.2f} mm/h, Duración: {duration:.1f} min")
 
                 # Actualizar estado
                 state['last_rain'] = rain_mm
@@ -287,10 +293,9 @@ def process_rain_data(batch_df, batch_id):
                     }
                     update_data = {
                         'rain_accumulated': float(accumulated),
-                        'max_intensity': float(max(rain_increment, state.get('max_intensity', 0))),
+                        'max_intensity': new_max_intensity,
                         'updated_at': current_time.isoformat()
                     }
-                    state['max_intensity'] = update_data['max_intensity']
                     requests.patch(update_url, headers=update_headers, json=update_data)
                     print(f"   ✅ Evento actualizado en Supabase (acumulado: {accumulated:.2f} mm)")
                 except Exception as e:
@@ -313,6 +318,43 @@ def process_rain_data(batch_df, batch_id):
 
 
 
+# Estado global con recuperacion automatica desde DB
+station_states = {}
+
+
+def init_states_from_supabase():
+    """Recupera el estado de eventos activos desde Supabase al iniciar el servicio para evitar perder estado tras reinicios."""
+    global station_states
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/rain_events?is_active=eq.true"
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+        }
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            events = resp.json()
+            for ev in events:
+                s_key = ev['station_key']
+                start_dt = datetime.fromisoformat(ev['event_start'].replace('Z', '+00:00'))
+                upd_dt = datetime.fromisoformat(ev['updated_at'].replace('Z', '+00:00')) if ev.get('updated_at') else start_dt
+                station_states[s_key] = {
+                    'last_rain': float(ev.get('rain_at_end') or ev.get('rain_at_start') or 0.0),
+                    'last_update': upd_dt,
+                    'last_station_ts': None,
+                    'is_raining': True,
+                    'event_id': ev.get('id'),
+                    'event_start': start_dt,
+                    'rain_at_start': float(ev.get('rain_at_start') or 0.0),
+                    'max_intensity': float(ev.get('max_intensity') or 0.0)
+                }
+                print(f"🔄 Estado de lluvia activo RECUPERADO de DB para {ev.get('station_name', s_key)} (Evento #{ev.get('id')}, Inicio: {start_dt})")
+    except Exception as e:
+        print(f"⚠️ No se pudo recuperar estado previo desde Supabase: {e}")
+
+
 def build_spark():
     """Construir sesión Spark"""
     return (
@@ -324,13 +366,12 @@ def build_spark():
     )
 
 
-# Estado global (en producción usar checkpointing de Spark)
-station_states = {}
-
-
 def main():
     """Streaming principal"""
     
+    # Recuperar estado de eventos abiertos en Supabase antes de iniciar consumo
+    init_states_from_supabase()
+
     spark = build_spark()
     spark.sparkContext.setLogLevel('WARN')
 
@@ -352,6 +393,10 @@ def main():
         StructField('rain_rate', DoubleType(), True),
         StructField('rain_rate_mm', DoubleType(), True),
         StructField('rain_rate_field', StringType(), True),
+        StructField('rain_daily_mm', DoubleType(), True),
+        StructField('rain_rate_mm_h', DoubleType(), True),
+        StructField('rain_last_15_min_mm', DoubleType(), True),
+        StructField('is_raining', BooleanType(), True),
     ])
 
     event_schema = StructType([
@@ -367,12 +412,15 @@ def main():
         from_json(col('value').cast('string'), event_schema).alias('evt')
     ).select('evt.*')
 
-    # Extraer datos
+    # Extraer datos priorizando rain_daily_mm y rain_rate_mm_h
     df = (
         parsed
         .withColumn('event_time', to_timestamp(from_unixtime(col('event_ts'))))
         .withColumn('rain_mm', col('payload.rain_rate_mm'))
-        .select('station_key', 'station_name', 'event_time', 'rain_mm')
+        .withColumn('rain_daily_mm', col('payload.rain_daily_mm'))
+        .withColumn('rain_rate_mm_h', col('payload.rain_rate_mm_h'))
+        .withColumn('is_raining_flag', col('payload.is_raining'))
+        .select('station_key', 'station_name', 'event_time', 'rain_mm', 'rain_daily_mm', 'rain_rate_mm_h', 'is_raining_flag')
         .filter(col('rain_mm').isNotNull())
     )
 
@@ -387,7 +435,7 @@ def main():
     )
 
     print(f"\n{'='*70}")
-    print(f"🌧️  SISTEMA DE ALERTAS DE LLUVIA v2.0")
+    print(f"🌧️  SISTEMA DE ALERTAS DE LLUVIA v2.1 (Con recuperación de estado)")
     print(f"{'='*70}")
     print(f"📊 Kafka Topic: {KAFKA_TOPIC_RAW}")
     print(f"💾 Base de datos: rain_events table")

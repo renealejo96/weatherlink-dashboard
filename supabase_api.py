@@ -51,6 +51,9 @@ class SupabaseAPI:
                     'dpv_kpa': float(row['vpd_kpa']) if row.get('vpd_kpa') else None,
                     'radiacion_solar': float(row['solar_radiation']) if row.get('solar_radiation') else None,
                     'lluvia_mm': float(row['rain_mm']) if row.get('rain_mm') else None,
+                    'lluvia_diaria_mm': float(row['rain_daily_mm']) if row.get('rain_daily_mm') is not None else float(row.get('rain_mm') or 0),
+                    'tasa_lluvia_mm_h': float(row['rain_rate_mm_h']) if row.get('rain_rate_mm_h') is not None else 0.0,
+                    'esta_lloviendo': bool(row.get('is_raining')) if row.get('is_raining') is not None else False,
                     'velocidad_viento': float(row['wind_speed']) if row.get('wind_speed') else None,
                 })
             return {'success': True, 'data': data}
@@ -64,7 +67,7 @@ class SupabaseAPI:
         try:
             start_time = (datetime.now() - timedelta(hours=hours)).isoformat()
             params = {
-                'select': 'event_time,temp_celsius,humidity,vpd_kpa,rain_mm,solar_radiation',
+                'select': 'event_time,temp_celsius,humidity,vpd_kpa,rain_mm,rain_rate_mm_h,rain_daily_mm,is_raining,solar_radiation',
                 'station_key': f'eq.{station_key}',
                 'event_time': f'gte.{start_time}',
                 'order': 'event_time.asc'
