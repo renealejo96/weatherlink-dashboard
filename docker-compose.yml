@@ -89,7 +89,20 @@ services:
     volumes:
       - ./logs:/app/logs
 
-  # Spark Streaming - Procesa datos y guarda en Supabase
+  # Redis - Persistencia y Cache de Estado en Tiempo Real
+  redis:
+    image: redis:7-alpine
+    container_name: weatherlink_redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "6379:6379"
+    networks:
+      - weatherlink_network
+    volumes:
+      - redis_data:/data
+
+  # Consumidor Asíncrono de Telemetría (Kafka -> Supabase)
   spark-streaming:
     build:
       context: .
@@ -103,7 +116,7 @@ services:
       - KAFKA_TOPIC_RAW=weatherlink.raw
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
-    command: python spark_to_supabase.py
+    command: python consumer_weather_to_supabase.py
     depends_on:
       - redpanda
       - kafka-producer
@@ -112,7 +125,7 @@ services:
     volumes:
       - ./logs:/app/logs
 
-  # Sistema de Alertas de Lluvia
+  # Motor Asíncrono de Alertas de Lluvia con Redis
   rain-alerts:
     build:
       context: .
@@ -126,10 +139,12 @@ services:
       - KAFKA_TOPIC_RAW=weatherlink.raw
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
-    command: python rain_alerts_v2.py
+      - REDIS_URL=redis://redis:6379/0
+    command: python consumer_rain_alerts.py
     depends_on:
       - redpanda
       - kafka-producer
+      - redis
     networks:
       - weatherlink_network
     volumes:
@@ -176,3 +191,7 @@ services:
 networks:
   weatherlink_network:
     driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
