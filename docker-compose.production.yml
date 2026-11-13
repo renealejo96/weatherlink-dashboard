@@ -1,26 +1,28 @@
 version: '3.8'
 
+name: weatherlink_prod
+
 services:
-  # Redpanda (Kafka)
+  # Redpanda (Broker Kafka de alto rendimiento en C++)
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v23.3.3
-    container_name: redpanda_prod
+    container_name: weatherlink_redpanda_prod
     command:
       - redpanda
       - start
       - --smp 1
-      - --memory 1G
+      - --memory 512M
       - --reserve-memory 0M
       - --overprovisioned
       - --node-id 0
       - --kafka-addr PLAINTEXT://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
       - --advertise-kafka-addr PLAINTEXT://redpanda:29092,EXTERNAL://localhost:9092
     ports:
-      - "19092:9092"
+      - "127.0.0.1:${REDPANDA_DEBUG_PORT:-19092}:9092"
     volumes:
-      - redpanda_data:/var/lib/redpanda/data
+      - redpanda_data_prod:/var/lib/redpanda/data
     networks:
-      - weatherlink_network
+      - weatherlink_prod_net
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
@@ -28,26 +30,26 @@ services:
       timeout: 10s
       retries: 5
 
-  # Redpanda Console
+  # Redpanda Console (Gestor de tópicos - Solo loopback)
   redpanda-console:
     image: docker.redpanda.com/redpandadata/console:v2.4.0
-    container_name: redpanda_console_prod
+    container_name: weatherlink_console_prod
     depends_on:
       - redpanda
     ports:
-      - "19644:8080"
+      - "127.0.0.1:${REDPANDA_CONSOLE_PORT:-18082}:8080"
     environment:
       KAFKA_BROKERS: redpanda:29092
     networks:
-      - weatherlink_network
+      - weatherlink_prod_net
     restart: unless-stopped
 
-  # Kafka Producer (weatherlink_client)
+  # Ingestor Polling WeatherLink v2 -> Kafka
   kafka-producer:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: kafka_producer_prod
+    container_name: weatherlink_producer_prod
     restart: unless-stopped
     env_file: .env
     environment:
@@ -58,29 +60,27 @@ services:
       redpanda:
         condition: service_healthy
     networks:
-      - weatherlink_network
+      - weatherlink_prod_net
     volumes:
       - ./logs:/app/logs
 
-  # Redis (Persistencia de Estado en Producción)
+  # Redis para Persistencia de Estados en Memoria Rápida (100% privado en su red)
   redis:
     image: redis:7-alpine
-    container_name: redis_prod
+    container_name: weatherlink_redis_prod
     restart: unless-stopped
     command: redis-server --save 60 1 --loglevel warning
-    ports:
-      - "6379:6379"
     networks:
-      - weatherlink_network
+      - weatherlink_prod_net
     volumes:
       - redis_data_prod:/data
 
-  # Consumidor Asíncrono de Telemetría (Kafka -> Supabase)
+  # Consumidor Asíncrono de Telemetría (Kafka -> Supabase weather_readings)
   spark-streaming:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: spark_streaming_prod
+    container_name: weatherlink_streaming_prod
     restart: unless-stopped
     env_file: .env
     environment:
@@ -92,16 +92,16 @@ services:
     depends_on:
       - kafka-producer
     networks:
-      - weatherlink_network
+      - weatherlink_prod_net
     volumes:
       - ./logs:/app/logs
 
-  # Motor Asíncrono de Alertas de Lluvia con Redis
+  # Motor Asíncrono de Alertas y Eventos de Lluvia con Redis
   rain-alerts:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rain_alerts_prod
+    container_name: weatherlink_rain_alerts_prod
     restart: unless-stopped
     env_file: .env
     environment:
@@ -115,16 +115,16 @@ services:
       - kafka-producer
       - redis
     networks:
-      - weatherlink_network
+      - weatherlink_prod_net
     volumes:
       - ./logs:/app/logs
 
-  # Monitor de cierre de eventos de lluvia (respaldo cada 10 min)
+  # Monitor de Cierre de Eventos Inactivos de Lluvia (cada 10 min)
   rain-monitor:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rain_monitor_prod
+    container_name: weatherlink_rain_monitor_prod
     restart: unless-stopped
     env_file: .env
     environment:
@@ -134,11 +134,12 @@ services:
     depends_on:
       - rain-alerts
     networks:
-      - weatherlink_network
+      - weatherlink_prod_net
     volumes:
       - ./logs:/app/logs
 
-  # Flask Application
+  # Servidor Web Flask con Gunicorn
+  # Expuesto directamente en 127.0.0.1:8090 para el Nginx principal del VPS
   weatherlink:
     build:
       context: .
@@ -147,9 +148,9 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "${HOST_PORT:-8080}:8000"
+      - "127.0.0.1:${HOST_PORT:-8090}:8000"
     networks:
-      - weatherlink_network
+      - weatherlink_prod_net
     volumes:
       - ./logs:/app/logs
     healthcheck:
@@ -159,31 +160,32 @@ services:
       retries: 3
       start_period: 40s
 
-  # Nginx Reverse Proxy (Opcional - para HTTPS)
+  # Nginx en contenedor deshabilitado (el VPS ya usa su propio Nginx en el host)
   nginx:
     image: nginx:alpine
-    container_name: nginx_prod
+    container_name: weatherlink_nginx_prod
+    profiles:
+      - internal_proxy_only
     restart: unless-stopped
     ports:
-      - "${NGINX_PORT:-80}:80"
-      - "${NGINX_SSL_PORT:-443}:443"
+      - "127.0.0.1:8091:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - ./nginx/logs:/var/log/nginx
     depends_on:
       - weatherlink
     networks:
-      - weatherlink_network
+      - weatherlink_prod_net
 
 networks:
-  weatherlink_network:
+  weatherlink_prod_net:
+    name: weatherlink_prod_net
     driver: bridge
 
 volumes:
-  redpanda_data:
+  redpanda_data_prod:
+    name: weatherlink_redpanda_data_prod
     driver: local
   redis_data_prod:
+    name: weatherlink_redis_data_prod
     driver: local
-

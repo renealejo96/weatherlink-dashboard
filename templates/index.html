@@ -14,8 +14,13 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Custom Stylesheet -->
+    <!-- Chart.js & Date-Fns -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@3.0.0/cdn.min.js"></script>
+
+    <!-- Custom Stylesheet & Chart Theme -->
     <link rel="stylesheet" href="/static/css/theme.css">
+    <script src="/static/js/chart-theme.js"></script>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-custom mb-5">
@@ -39,7 +44,7 @@
     <div class="container px-4">
         <div class="text-center mb-5">
             <h1 class="display-4 fw-bold text-white mb-2"><i class="fas fa-broadcast-tower text-info"></i> Estaciones Meteorológicas</h1>
-            <p class="lead text-light opacity-75">Monitoreo en tiempo real de las 3 estaciones</p>
+            <p class="lead text-light opacity-75">Monitoreo en tiempo real de las 3 estaciones &bull; <span class="text-primary fw-semibold"><i class="fas fa-mouse-pointer me-1"></i>Haz clic en cualquier métrica para ver su gráfica</span></p>
         </div>
 
         <!-- Eventos de Lluvia Activos -->
@@ -62,7 +67,7 @@
                     
                     <div class="mt-4 pt-3 border-top border-secondary border-opacity-10 text-center">
                         <a href="/station/{{ key }}" class="btn-custom w-100">
-                            <i class="fas fa-chart-line me-1"></i> Ver Gráficos Detallados
+                            <i class="fas fa-chart-line me-1"></i> Ver Todos los Gráficos
                         </a>
                     </div>
                 </div>
@@ -71,8 +76,333 @@
         </div>
     </div>
 
+    <!-- Modal Interactivo de Métricas con Gráficos Instantáneos -->
+    <div class="modal fade glass-modal" id="metricModal" tabindex="-1" aria-labelledby="metricModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-3">
+                        <div id="modalMetricIconBox" class="p-2.5 rounded-3 d-flex align-items-center justify-content-center" style="width: 46px; height: 46px; background: rgba(255,255,255,0.06);">
+                            <i id="modalMetricIcon" class="fas fa-chart-line fs-4 text-primary"></i>
+                        </div>
+                        <div>
+                            <h4 class="modal-title fw-bold text-white fs-5 mb-0" id="metricModalLabel">Métrica</h4>
+                            <small class="text-white-50" id="modalStationSubtitle">Estación</small>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-primary bg-opacity-20 border border-primary border-opacity-30 text-white px-3 py-2 fs-6" id="modalCurrentBadge">-</span>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                </div>
+
+                <div class="modal-body p-4">
+                    <!-- Selector de Rangos Rápidos -->
+                    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                        <span class="text-white-50 fw-semibold" style="font-size: 0.85rem;"><i class="fas fa-history me-1"></i> Rango Temporal:</span>
+                        <div class="d-flex gap-2">
+                            <button class="range-pill-btn" onclick="changeModalRange(1)" id="pill-1">24 Horas</button>
+                            <button class="range-pill-btn active" onclick="changeModalRange(7)" id="pill-7">7 Días</button>
+                            <button class="range-pill-btn" onclick="changeModalRange(15)" id="pill-15">15 Días</button>
+                            <button class="range-pill-btn" onclick="changeModalRange(30)" id="pill-30">30 Días</button>
+                        </div>
+                    </div>
+
+                    <!-- Mini Tarjetas de Estadísticas -->
+                    <div class="row g-3 mb-4" id="modalStatChips">
+                        <div class="col-6 col-md-3">
+                            <div class="stat-chip">
+                                <div class="stat-chip-label"><i class="fas fa-arrow-up text-danger me-1"></i> Máximo</div>
+                                <div class="stat-chip-value" id="statMax">-</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="stat-chip">
+                                <div class="stat-chip-label"><i class="fas fa-arrow-down text-info me-1"></i> Mínimo</div>
+                                <div class="stat-chip-value" id="statMin">-</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="stat-chip">
+                                <div class="stat-chip-label"><i class="fas fa-calculator text-warning me-1"></i> Promedio</div>
+                                <div class="stat-chip-value" id="statAvg">-</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="stat-chip">
+                                <div class="stat-chip-label"><i class="fas fa-database text-success me-1"></i> Lecturas</div>
+                                <div class="stat-chip-value" id="statCount">-</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Canvas del Gráfico & Loading -->
+                    <div style="position: relative; height: 320px; width: 100%;">
+                        <div id="modalLoading" class="position-absolute top-50 start-50 translate-middle text-center" style="display: none; z-index: 10;">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="text-white-50 mt-2 small">Cargando datos históricos...</p>
+                        </div>
+                        <canvas id="modalChartCanvas"></canvas>
+                    </div>
+                </div>
+
+                <div class="modal-footer d-flex justify-content-between align-items-center">
+                    <a id="modalFullStationLink" href="#" class="btn-outline-custom btn-sm">
+                        <i class="fas fa-external-link-alt me-1"></i> Ver Resumen Completo de la Estación
+                    </a>
+                    <button type="button" class="btn btn-secondary btn-sm px-3 rounded-pill" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap Bundle JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        const stationsMeta = {{ stations | tojson }};
+        const stationKeys = Object.keys(stationsMeta);
+
+        // Estado del Modal de Gráficas
+        let currentModalStation = null;
+        let currentModalMetric = null;
+        let currentModalDays = 7;
+        let modalChartInstance = null;
+        const bsModal = new bootstrap.Modal(document.getElementById('metricModal'));
+
+        // Configuración de métricas
+        const METRIC_CONFIG = {
+            temperature: {
+                title: 'Temperatura',
+                unit: '°C',
+                icon: 'fas fa-thermometer-half',
+                color: '#f97316',
+                calc: r => r.temperature ? ((r.temperature - 32) * 5 / 9) : null,
+                decimals: 1,
+                isBar: false
+            },
+            humidity: {
+                title: 'Humedad Relativa',
+                unit: '%',
+                icon: 'fas fa-tint',
+                color: '#06b6d4',
+                calc: r => (r.humidity !== null && r.humidity !== undefined) ? r.humidity : null,
+                decimals: 1,
+                isBar: false
+            },
+            wind_speed: {
+                title: 'Velocidad del Viento',
+                unit: 'km/h',
+                icon: 'fas fa-wind',
+                color: '#3b82f6',
+                calc: r => r.wind_speed ? (r.wind_speed * 1.60934) : 0,
+                decimals: 1,
+                isBar: false
+            },
+            rain: {
+                title: 'Precipitación',
+                unit: 'mm',
+                icon: 'fas fa-cloud-rain',
+                color: '#8b5cf6',
+                calc: r => (r.rain_mm !== null && r.rain_mm !== undefined) ? r.rain_mm : (r.rain || 0),
+                decimals: 2,
+                isBar: true
+            },
+            solar_radiation: {
+                title: 'Radiación Solar',
+                unit: 'W/m²',
+                icon: 'fas fa-sun',
+                color: '#f59e0b',
+                calc: r => (r.solar_radiation !== null && r.solar_radiation !== undefined) ? r.solar_radiation : null,
+                decimals: 0,
+                isBar: false
+            },
+            vpd: {
+                title: 'Déficit de Presión de Vapor (DPV)',
+                unit: 'kPa',
+                icon: 'fas fa-chart-line',
+                color: '#10b981',
+                calc: r => {
+                    if (r.temperature && r.humidity) {
+                        const tc = (r.temperature - 32) * 5 / 9;
+                        const vpsat = 0.6108 * Math.exp((17.27 * tc) / (tc + 237.3));
+                        const vpactual = (r.humidity / 100) * vpsat;
+                        return Math.max(0, vpsat - vpactual);
+                    }
+                    return null;
+                },
+                decimals: 3,
+                isBar: false
+            }
+        };
+
+        // Abrir Modal de Métrica al hacer clic
+        function openMetricModal(stationKey, metricType, currentValueFormatted) {
+            currentModalStation = stationKey;
+            currentModalMetric = metricType;
+            currentModalDays = 7;
+
+            const config = METRIC_CONFIG[metricType] || METRIC_CONFIG.temperature;
+            const stationName = stationsMeta[stationKey] ? stationsMeta[stationKey].name : stationKey;
+
+            // Actualizar textos e iconos del modal
+            document.getElementById('metricModalLabel').textContent = `${stationName} - ${config.title}`;
+            document.getElementById('modalStationSubtitle').innerHTML = `<i class="fas fa-map-marker-alt text-primary me-1"></i>${stationName} &bull; Historial detallado`;
+            
+            const iconEl = document.getElementById('modalMetricIcon');
+            iconEl.className = `${config.icon} fs-4`;
+            iconEl.style.color = config.color;
+
+            const currentBadge = document.getElementById('modalCurrentBadge');
+            currentBadge.textContent = currentValueFormatted || '-';
+            currentBadge.style.borderColor = config.color;
+
+            document.getElementById('modalFullStationLink').href = `/station/${stationKey}`;
+
+            // Resetear botones de rango
+            document.querySelectorAll('.range-pill-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`pill-${currentModalDays}`).classList.add('active');
+
+            // Abrir modal y cargar gráfico
+            bsModal.show();
+            loadModalChartData(currentModalDays);
+        }
+
+        // Cambiar rango de tiempo dentro del modal
+        function changeModalRange(days) {
+            currentModalDays = days;
+            document.querySelectorAll('.range-pill-btn').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.getElementById(`pill-${days}`);
+            if (activeBtn) activeBtn.classList.add('active');
+            loadModalChartData(days);
+        }
+
+        // Cargar datos históricos para el gráfico del modal
+        async function loadModalChartData(days) {
+            if (!currentModalStation || !currentModalMetric) return;
+
+            const loadingEl = document.getElementById('modalLoading');
+            loadingEl.style.display = 'block';
+
+            try {
+                const response = await fetch(`/api/historical/${currentModalStation}?days=${days}`);
+                const data = await response.json();
+                loadingEl.style.display = 'none';
+
+                if (data.error) {
+                    alert('Error cargando historial: ' + data.error);
+                    return;
+                }
+
+                renderModalChart(data.records || [], currentModalMetric);
+            } catch (err) {
+                loadingEl.style.display = 'none';
+                console.error(err);
+            }
+        }
+
+        // Renderizar el gráfico con Chart.js dentro del Modal
+        function renderModalChart(records, metricType) {
+            const config = METRIC_CONFIG[metricType] || METRIC_CONFIG.temperature;
+            const canvas = document.getElementById('modalChartCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // Extraer y procesar valores
+            const validRecords = [];
+            records.forEach(r => {
+                const val = config.calc(r);
+                if (val !== null && val !== undefined && !isNaN(val)) {
+                    validRecords.push({
+                        timestamp: r.timestamp,
+                        value: val
+                    });
+                }
+            });
+
+            // Actualizar chips de estadísticas
+            if (validRecords.length > 0) {
+                const values = validRecords.map(d => d.value);
+                const maxVal = Math.max(...values);
+                const minVal = Math.min(...values);
+                const avgVal = values.reduce((a, b) => a + b, 0) / values.length;
+
+                document.getElementById('statMax').textContent = `${maxVal.toFixed(config.decimals)} ${config.unit}`;
+                document.getElementById('statMin').textContent = `${minVal.toFixed(config.decimals)} ${config.unit}`;
+                document.getElementById('statAvg').textContent = `${avgVal.toFixed(config.decimals)} ${config.unit}`;
+                document.getElementById('statCount').textContent = validRecords.length.toLocaleString('es-ES');
+            } else {
+                document.getElementById('statMax').textContent = '-';
+                document.getElementById('statMin').textContent = '-';
+                document.getElementById('statAvg').textContent = '-';
+                document.getElementById('statCount').textContent = '0';
+            }
+
+            // Destruir gráfico anterior si existe
+            if (modalChartInstance) {
+                modalChartInstance.destroy();
+                modalChartInstance = null;
+            }
+
+            const labels = validRecords.map(r => new Date(r.timestamp * 1000).toLocaleString('es-ES', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            }));
+            const datasetValues = validRecords.map(r => r.value);
+
+            // Crear gradiente elegante
+            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, config.color + '44');
+            gradient.addColorStop(0.7, config.color + '0a');
+            gradient.addColorStop(1, config.color + '00');
+
+            const isBar = config.isBar;
+
+            modalChartInstance = new Chart(ctx, {
+                type: isBar ? 'bar' : 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: `${config.title} (${config.unit})`,
+                        data: datasetValues,
+                        borderColor: config.color,
+                        backgroundColor: isBar ? config.color + '88' : gradient,
+                        borderWidth: isBar ? 1 : 2.5,
+                        fill: !isBar,
+                        tension: 0.35,
+                        pointRadius: datasetValues.length > 80 ? 0 : 2.5,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: config.color,
+                        pointBorderColor: '#0b0f19',
+                        pointBorderWidth: 2,
+                        borderRadius: isBar ? 4 : 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return ` ${config.title}: ${context.parsed.y.toFixed(config.decimals)} ${config.unit}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: ChartTheme.getAxisConfig('Fecha y Hora'),
+                        y: ChartTheme.getAxisConfig(`${config.title} (${config.unit})`, isBar)
+                    }
+                }
+            });
+        }
+
         // Cargar datos actuales de cada estación
         async function loadCurrentData(stationKey) {
             try {
@@ -91,38 +421,51 @@
                 const rainDaily = (data.rain_daily_mm !== null && data.rain_daily_mm !== undefined) ? data.rain_daily_mm : (data.rain_rate || 0);
                 const rainRateH = (data.rain_rate_mm_h !== null && data.rain_rate_mm_h !== undefined) ? data.rain_rate_mm_h : 0;
                 
+                const tempStr = tempC ? `${tempC}°C` : 'N/A';
+                const humStr = (data.humidity !== null && data.humidity !== undefined) ? `${data.humidity.toFixed(1)}%` : 'N/A';
+                const windStr = windKmh ? `${windKmh} km/h` : 'N/A';
+                const rainStr = `${rainDaily ? rainDaily.toFixed(2) : '0.00'} mm`;
+                const solarStr = (data.solar_radiation !== null && data.solar_radiation !== undefined) ? `${data.solar_radiation} W/m²` : 'N/A';
+                const dpvStr = (data.vpd !== null && data.vpd !== undefined) ? `${data.vpd.toFixed(3)} kPa` : 'N/A';
+
                 const html = `
                     <div class="metric-grid">
-                        <div class="metric-tile tile-temp">
+                        <div class="metric-tile tile-temp clickable" onclick="openMetricModal('${stationKey}', 'temperature', '${tempStr}')" title="Haz clic para ver gráfico de Temperatura">
+                            <span class="metric-click-hint"><i class="fas fa-chart-line"></i></span>
                             <i class="fas fa-thermometer-half metric-icon"></i>
-                            <span class="metric-value">${tempC ? tempC + '°C' : 'N/A'}</span>
+                            <span class="metric-value">${tempStr}</span>
                             <span class="metric-label">Temperatura</span>
                         </div>
-                        <div class="metric-tile tile-humidity">
+                        <div class="metric-tile tile-humidity clickable" onclick="openMetricModal('${stationKey}', 'humidity', '${humStr}')" title="Haz clic para ver gráfico de Humedad">
+                            <span class="metric-click-hint"><i class="fas fa-chart-line"></i></span>
                             <i class="fas fa-tint metric-icon"></i>
-                            <span class="metric-value">${data.humidity ? data.humidity.toFixed(1) + '%' : 'N/A'}</span>
+                            <span class="metric-value">${humStr}</span>
                             <span class="metric-label">Humedad</span>
                         </div>
-                        <div class="metric-tile tile-wind">
+                        <div class="metric-tile tile-wind clickable" onclick="openMetricModal('${stationKey}', 'wind_speed', '${windStr}')" title="Haz clic para ver gráfico de Viento">
+                            <span class="metric-click-hint"><i class="fas fa-chart-line"></i></span>
                             <i class="fas fa-wind metric-icon"></i>
-                            <span class="metric-value">${windKmh ? windKmh + ' km/h' : 'N/A'}</span>
+                            <span class="metric-value">${windStr}</span>
                             <span class="metric-label">Viento</span>
                         </div>
-                        <div class="metric-tile tile-rain ${isRaining ? 'border border-primary bg-primary bg-opacity-20 shadow' : (rainDaily > 0 ? 'bg-primary bg-opacity-10' : '')}">
+                        <div class="metric-tile tile-rain clickable ${isRaining ? 'border border-primary bg-primary bg-opacity-20 shadow' : (rainDaily > 0 ? 'bg-primary bg-opacity-10' : '')}" onclick="openMetricModal('${stationKey}', 'rain', '${rainStr}')" title="Haz clic para ver gráfico de Lluvia">
+                            <span class="metric-click-hint"><i class="fas fa-chart-line"></i></span>
                             <i class="fas fa-cloud-rain metric-icon ${isRaining ? 'text-info' : ''}"></i>
-                            <span class="metric-value">${rainDaily ? rainDaily.toFixed(2) + ' mm' : '0.00 mm'}</span>
+                            <span class="metric-value">${rainStr}</span>
                             <span class="metric-label">
                                 Lluvia Hoy ${isRaining ? `<span class="badge bg-danger ms-1">🌧️ ${rainRateH.toFixed(1)} mm/h</span>` : ''}
                             </span>
                         </div>
-                        <div class="metric-tile tile-solar">
+                        <div class="metric-tile tile-solar clickable" onclick="openMetricModal('${stationKey}', 'solar_radiation', '${solarStr}')" title="Haz clic para ver gráfico de Radiación Solar">
+                            <span class="metric-click-hint"><i class="fas fa-chart-line"></i></span>
                             <i class="fas fa-sun metric-icon"></i>
-                            <span class="metric-value">${data.solar_radiation !== null && data.solar_radiation !== undefined ? data.solar_radiation + ' W/m²' : 'N/A'}</span>
+                            <span class="metric-value">${solarStr}</span>
                             <span class="metric-label">Rad. Solar</span>
                         </div>
-                        <div class="metric-tile tile-dpv">
+                        <div class="metric-tile tile-dpv clickable" onclick="openMetricModal('${stationKey}', 'vpd', '${dpvStr}')" title="Haz clic para ver gráfico de DPV">
+                            <span class="metric-click-hint"><i class="fas fa-chart-line"></i></span>
                             <i class="fas fa-chart-line metric-icon"></i>
-                            <span class="metric-value">${data.vpd !== null && data.vpd !== undefined ? data.vpd + ' kPa' : 'N/A'}</span>
+                            <span class="metric-value">${dpvStr}</span>
                             <span class="metric-label">DPV</span>
                         </div>
                     </div>
@@ -138,9 +481,8 @@
             }
         }
         
-        const stations = {{ stations.keys() | list | tojson }};
-        stations.forEach(station => loadCurrentData(station));
-        setInterval(() => stations.forEach(station => loadCurrentData(station)), 60000);
+        stationKeys.forEach(station => loadCurrentData(station));
+        setInterval(() => stationKeys.forEach(station => loadCurrentData(station)), 60000);
 
         async function loadActiveRainEvents() {
             try {
@@ -151,8 +493,9 @@
                 if (data.success && data.data.length > 0) {
                     let html = '';
                     data.data.forEach(event => {
-                        const duration = Math.floor(event.duration_minutes);
+                        const duration = Math.floor(event.duration_minutes || 0);
                         const timeStr = duration >= 60 ? `${Math.floor(duration/60)}h ${duration%60}m` : `${duration}m`;
+                        const acc = (event.rain_accumulated !== null && event.rain_accumulated !== undefined) ? event.rain_accumulated.toFixed(2) : '0.00';
                         
                         html += `
                             <div class="active-rain-card mb-4">
@@ -165,7 +508,7 @@
                                         <div class="d-flex gap-4">
                                             <div>
                                                 <small class="text-white-50 d-block text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Acumulado</small>
-                                                <span class="fs-4 fw-bold" style="color: var(--color-rain);">${event.rain_accumulated.toFixed(2)} mm</span>
+                                                <span class="fs-4 fw-bold" style="color: var(--color-rain);">${acc} mm</span>
                                             </div>
                                             <div>
                                                 <small class="text-white-50 d-block text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Duración</small>

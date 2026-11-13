@@ -1,161 +1,131 @@
 #!/bin/bash
 ##############################################################################
-# Script de Deployment para Hostinger VPS
-# Uso: ./deploy-hostinger.sh
+# Script de Deployment SEGURO para Hostinger VPS
+# Proyecto: weatherlink_prod (Totalmente aislado de otras apps en el servidor)
+# Dominios: weather.velezrapp.cloud / estacion.velezrapp.cloud
+# Uso: sudo ./deploy-hostinger.sh
 ##############################################################################
 
-set -e  # Salir si hay algún error
+set -e  # Salir si hay algún error fatal
 
 # Colores para output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Configuración
-PROJECT_NAME="weatherlink-dashboard"
-DEPLOY_DIR="/var/www/weatherlink"
+# Configuración de aislamiento estricto
+PROJECT_NAME="weatherlink_prod"
+# Directorio actual donde está el script (soporta /root/weatherlink-dashboard o /var/www/weatherlink)
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_DIR="/var/backups/weatherlink"
 COMPOSE_FILE="docker-compose.production.yml"
+DOMAIN="weather.velezrapp.cloud"
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║  WeatherLink Dashboard - Deployment a Producción      ║${NC}"
+echo -e "${BLUE}║  WeatherLink Dashboard - Despliegue Seguro VPS         ║${NC}"
+echo -e "${BLUE}║  Proyecto Aislado: ${PROJECT_NAME}                     ║${NC}"
+echo -e "${BLUE}║  Dominios: ${DOMAIN} / estacion.velezrapp.cloud ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}\n"
 
-# Función para mostrar mensajes
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[✓]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[⚠]${NC} $1"; }
+log_error() { echo -e "${RED}[✗]${NC} $1"; }
 
-log_success() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[⚠]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[✗]${NC} $1"
-}
-
-# Verificar que estamos en el servidor
-if [ ! -f "/etc/hostname" ]; then
-    log_error "Este script debe ejecutarse en el servidor Hostinger"
+# 1. Detectar comando docker compose
+if docker compose version &>/dev/null; then
+    DOCKER_COMPOSE="docker compose"
+elif command -v docker-compose &>/dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+else
+    log_error "Ni 'docker compose' ni 'docker-compose' están instalados en este servidor."
     exit 1
 fi
+log_info "Motor de orquestación detectado: ${DOCKER_COMPOSE}"
 
-# Paso 1: Crear backup antes de cualquier cambio
-log_info "Paso 1/8: Creando backup de la aplicación actual..."
+# Paso 1: Backup preventivo local del proyecto
+log_info "Paso 1/7: Creando backup del directorio ${DEPLOY_DIR}..."
 BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
 mkdir -p "${BACKUP_DIR}/${BACKUP_DATE}"
 
 if [ -d "$DEPLOY_DIR" ]; then
-    log_info "Respaldando directorio actual..."
-    tar -czf "${BACKUP_DIR}/${BACKUP_DATE}/app_backup.tar.gz" -C "$DEPLOY_DIR" . 2>/dev/null || true
-    
-    # Backup de contenedores Docker si existen
-    if command -v docker &> /dev/null; then
-        docker ps -a > "${BACKUP_DIR}/${BACKUP_DATE}/containers.txt" 2>/dev/null || true
-        docker images > "${BACKUP_DIR}/${BACKUP_DATE}/images.txt" 2>/dev/null || true
-    fi
-    
+    tar -czf "${BACKUP_DIR}/${BACKUP_DATE}/app_backup.tar.gz" -C "$DEPLOY_DIR" --exclude='.git' . 2>/dev/null || true
     log_success "Backup creado en ${BACKUP_DIR}/${BACKUP_DATE}"
-else
-    log_warning "No hay aplicación previa para respaldar"
 fi
 
-# Paso 2: Detener servicios actuales (si existen)
-log_info "Paso 2/8: Deteniendo servicios actuales..."
 cd "$DEPLOY_DIR" 2>/dev/null || true
 
-if [ -f "docker-compose.yml" ] || [ -f "$COMPOSE_FILE" ]; then
-    log_info "Deteniendo contenedores Docker..."
-    docker-compose -f ${COMPOSE_FILE} down 2>/dev/null || docker-compose down 2>/dev/null || true
-    log_success "Servicios detenidos"
+# Paso 2: Detener ÚNICAMENTE los contenedores de este proyecto (weatherlink_prod)
+log_info "Paso 2/7: Deteniendo solo los contenedores de WeatherLink (otras apps NO se tocan)..."
+$DOCKER_COMPOSE -p ${PROJECT_NAME} -f ${COMPOSE_FILE} down 2>/dev/null || true
+log_success "Servicios de WeatherLink detenidos de forma segura"
+
+# NOTA DE SEGURIDAD:
+# NUNCA ejecutamos 'docker system prune' para no borrar imágenes ni contenedores de tus otras apps.
+
+# Paso 3: Validar directorios y configuración .env
+log_info "Paso 3/7: Verificando directorios y configuración..."
+mkdir -p ./logs ./nginx/logs ./nginx/ssl ./nginx/conf.d ./certbot/www
+
+if [ ! -f ".env" ]; then
+    if [ -f ".env.production.example" ]; then
+        log_warning "No se encontró .env. Creando a partir de .env.production.example..."
+        cp .env.production.example .env
+        log_warning "Asegúrate de colocar tus credenciales en /var/www/weatherlink/.env"
+    else
+        log_error "Archivo .env no encontrado."
+        exit 1
+    fi
+fi
+
+# Paso 4: Certificado SSL temporal para arranque seguro
+if [ ! -f "./nginx/ssl/fullchain.pem" ] || [ ! -f "./nginx/ssl/privkey.pem" ]; then
+    log_warning "Certificado SSL no encontrado. Creando certificado temporal para arranque..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout ./nginx/ssl/privkey.pem \
+        -out ./nginx/ssl/fullchain.pem \
+        -subj "/C=EC/ST=Pichincha/L=Quito/O=WeatherLink/CN=${DOMAIN}" 2>/dev/null || true
+    log_success "Certificado SSL de inicialización preparado"
+fi
+
+# Paso 5: Construir imágenes Docker de WeatherLink (Optimizadas sin PySpark ni Java)
+log_info "Paso 5/7: Construyendo imágenes optimizadas de WeatherLink..."
+$DOCKER_COMPOSE -p ${PROJECT_NAME} -f ${COMPOSE_FILE} build
+log_success "Imágenes construidas exitosamente"
+
+# Paso 6: Iniciar el stack aislado
+log_info "Paso 6/7: Levantando contenedores en el proyecto aislado '${PROJECT_NAME}'..."
+$DOCKER_COMPOSE -p ${PROJECT_NAME} -f ${COMPOSE_FILE} up -d
+log_success "Contenedores de WeatherLink iniciados"
+
+# Paso 7: Verificación de salud
+log_info "Paso 7/7: Esperando inicialización..."
+sleep 12
+$DOCKER_COMPOSE -p ${PROJECT_NAME} -f ${COMPOSE_FILE} ps
+
+HOST_PORT=$(grep -E '^HOST_PORT=' .env | cut -d '=' -f2 | tr -d ' ' || echo "8090")
+[ -z "$HOST_PORT" ] && HOST_PORT="8090"
+
+if curl -f -s "http://127.0.0.1:${HOST_PORT}/" > /dev/null; then
+    log_success "✓ La aplicación WeatherLink está respondiendo correctamente en http://127.0.0.1:${HOST_PORT}"
 else
-    log_warning "No hay servicios Docker corriendo"
+    log_warning "⚠ La aplicación puede estar terminando de arrancar. Revisa los logs con: docker logs -f weatherlink_app_prod"
 fi
 
-# Paso 3: Limpiar contenedores e imágenes antiguas (opcional)
-log_info "Paso 3/8: Limpiando recursos Docker antiguos..."
-docker system prune -f 2>/dev/null || true
-log_success "Limpieza completada"
-
-# Paso 4: Verificar archivos necesarios
-log_info "Paso 4/8: Verificando archivos de configuración..."
-
-if [ ! -f "${DEPLOY_DIR}/.env" ]; then
-    log_error "Archivo .env no encontrado. Por favor, sube el archivo .env primero."
-    exit 1
-fi
-
-if [ ! -f "${DEPLOY_DIR}/${COMPOSE_FILE}" ]; then
-    log_error "Archivo ${COMPOSE_FILE} no encontrado."
-    exit 1
-fi
-
-log_success "Archivos de configuración encontrados"
-
-# Paso 5: Construir imágenes Docker
-log_info "Paso 5/8: Construyendo imágenes Docker..."
-cd "$DEPLOY_DIR"
-docker-compose -f ${COMPOSE_FILE} build --no-cache
-log_success "Imágenes construidas correctamente"
-
-# Paso 6: Iniciar servicios
-log_info "Paso 6/8: Iniciando servicios en producción..."
-docker-compose -f ${COMPOSE_FILE} up -d
-log_success "Servicios iniciados"
-
-# Paso 7: Esperar a que los servicios estén saludables
-log_info "Paso 7/8: Esperando a que los servicios estén listos..."
-sleep 10
-
-# Verificar estado de contenedores
-log_info "Estado de los contenedores:"
-docker-compose -f ${COMPOSE_FILE} ps
-
-# Paso 8: Verificar que la aplicación responda
-log_info "Paso 8/8: Verificando que la aplicación responda..."
-sleep 5
-
-HOST_PORT=$(grep HOST_PORT .env | cut -d '=' -f2 | tr -d ' ' || echo "8080")
-
-if curl -f -s "http://localhost:${HOST_PORT}/" > /dev/null; then
-    log_success "✓ Aplicación respondiendo correctamente en puerto ${HOST_PORT}"
-else
-    log_warning "⚠ La aplicación puede estar iniciando aún. Verifica los logs:"
-    log_info "docker-compose -f ${COMPOSE_FILE} logs weatherlink"
-fi
-
-# Mostrar resumen
 echo -e "\n${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║          DEPLOYMENT COMPLETADO EXITOSAMENTE            ║${NC}"
+echo -e "${GREEN}║          DESPLIEGUE FINALIZADO CON ÉXITO               ║${NC}"
+echo -e "${GREEN}║     Ninguna otra aplicación del VPS fue afectada       ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}\n"
 
-echo -e "${BLUE}📊 Resumen del Deployment:${NC}"
-echo -e "  • Backup:             ${BACKUP_DIR}/${BACKUP_DATE}"
-echo -e "  • Directorio:         ${DEPLOY_DIR}"
-echo -e "  • Compose File:       ${COMPOSE_FILE}"
-echo -e "  • Puerto App:         ${HOST_PORT}"
-
-echo -e "\n${BLUE}🔍 Comandos útiles:${NC}"
-echo -e "  • Ver logs:           cd ${DEPLOY_DIR} && docker-compose -f ${COMPOSE_FILE} logs -f"
-echo -e "  • Ver estado:         cd ${DEPLOY_DIR} && docker-compose -f ${COMPOSE_FILE} ps"
-echo -e "  • Reiniciar:          cd ${DEPLOY_DIR} && docker-compose -f ${COMPOSE_FILE} restart"
-echo -e "  • Detener:            cd ${DEPLOY_DIR} && docker-compose -f ${COMPOSE_FILE} down"
-echo -e "  • Restaurar backup:   tar -xzf ${BACKUP_DIR}/${BACKUP_DATE}/app_backup.tar.gz -C ${DEPLOY_DIR}"
-
-echo -e "\n${BLUE}🌐 Acceso a la aplicación:${NC}"
-echo -e "  • HTTP:  http://$(hostname -I | awk '{print $1}'):${HOST_PORT}"
-echo -e "  • Redpanda Console: http://$(hostname -I | awk '{print $1}'):19644"
-
-echo -e "\n${YELLOW}⚠️  IMPORTANTE:${NC}"
-echo -e "  1. Verifica que todos los contenedores estén corriendo"
-echo -e "  2. Revisa los logs si algo no funciona"
-echo -e "  3. Guarda el backup: ${BACKUP_DIR}/${BACKUP_DATE}"
-echo -e "  4. Configura un dominio/SSL con Nginx si es necesario\n"
-
-log_success "Deployment finalizado. ¡Tu aplicación está en producción!"
+echo -e "${CYAN}🌐 Acceso a WeatherLink:${NC}"
+echo -e "  • Puerto asignado:     ${HOST_PORT} (127.0.0.1:${HOST_PORT})"
+echo -e "  • Dominio público:     https://${DOMAIN}"
+echo -e "  • Dominios admitidos:  weather.velezrapp.cloud / estacion.velezrapp.cloud"
+echo -e "\n${CYAN}🔍 Comandos para monitorear solo WeatherLink:${NC}"
+echo -e "  • Ver estado:          ${DOCKER_COMPOSE} -p ${PROJECT_NAME} -f ${COMPOSE_FILE} ps"
+echo -e "  • Ver logs de lluvia:  docker logs -f weatherlink_rain_alerts_prod"
+echo -e "  • Ver logs telemetría: docker logs -f weatherlink_streaming_prod"
+echo -e "  • Ver logs web:        docker logs -f weatherlink_app_prod"

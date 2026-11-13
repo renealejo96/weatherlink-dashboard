@@ -105,16 +105,22 @@ def close_old_events(minutes_threshold=30):
         should_close = not rain_still_active and minutes_since_update >= minutes_threshold
         
         if should_close:
-            # Asegurar que el acumulado no se sobrescriba con valores incorrectos (como 0 o negativos) debido a resets de acumulador
+            # Asegurar que el acumulado no se sobrescriba con valores incorrectos
             existing_accumulated = float(event.get('rain_accumulated') or 0)
             calculated_accumulated = round(latest_rain - rain_at_start, 2) if (latest_rain is not None and latest_rain >= rain_at_start) else 0.0
             
             # Usar el máximo entre el acumulado que ya estaba registrado y el calculado
             rain_accumulated = max(existing_accumulated, calculated_accumulated)
             
-            # Si sigue siendo 0 o menor, asegurar un mínimo de 0.10 mm
-            if rain_accumulated <= 0:
-                rain_accumulated = 0.10
+            # Si no hubo lluvia real acumulada (< 0.2 mm = 1 tip mínimo del balancín Davis)
+            # Eliminar el evento fantasma para evitar registros de 0.0 mm en el historial
+            if rain_accumulated < 0.2:
+                del_url = f"{url}?id=eq.{event_id}"
+                del_res = requests.delete(del_url, headers=headers)
+                print(f"   🗑️ Evento fantasma #{event_id} eliminado de Supabase (Lluvia < 0.2 mm)")
+                closed_count += 1
+                continue
+            
             event_end = updated_at  # El evento terminó cuando se actualizó por última vez
             duration = (update_time - start_time).total_seconds() / 60
             

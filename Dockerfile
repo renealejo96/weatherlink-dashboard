@@ -1,4 +1,4 @@
-# Usar imagen base de Python
+# Usar imagen base ligera de Python
 FROM python:3.11-slim
 
 # Establecer variables de entorno
@@ -6,17 +6,15 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
     PYTHONPATH=/app
 
 # Crear directorio de trabajo
 WORKDIR /app
 
-# Instalar dependencias del sistema (incluyendo Java para PySpark y curl para healthcheck)
+# Instalar dependencias esenciales del sistema (curl para healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     curl \
-    openjdk-21-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements primero (mejor cache de Docker)

@@ -26,7 +26,7 @@ SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
 
 # Umbrales de detección
-RAIN_START_THRESHOLD = float(os.getenv('RAIN_START_THRESHOLD', '0.1'))  # mm
+RAIN_START_THRESHOLD = float(os.getenv('RAIN_START_THRESHOLD', '0.2'))  # mm (1 basculada de balancín Davis = 0.2mm)
 NO_RAIN_TIMEOUT_MINUTES = int(os.getenv('NO_RAIN_TIMEOUT_MINUTES', '30'))  # minutos de inactividad
 MAX_EVENT_DURATION_MINUTES = int(os.getenv('MAX_EVENT_DURATION_MINUTES', '720'))  # 12 horas max
 
@@ -200,9 +200,13 @@ async def close_rain_event_supabase(client: httpx.AsyncClient, station_key: str,
         else:
             duration_minutes = int((now_dt.replace(tzinfo=start_dt.tzinfo) - start_dt).total_seconds() / 60)
 
-        rain_accumulated = round(rain_at_end - rain_at_start, 2) if rain_at_end >= rain_at_start else 0.10
-        if rain_accumulated <= 0:
-            rain_accumulated = 0.10
+        rain_accumulated = round(rain_at_end - rain_at_start, 2) if rain_at_end >= rain_at_start else 0.0
+
+        # Si el acumulado es menor a 0.2 mm (menos de 1 tip de balancín), se descarta como falso positivo
+        if rain_accumulated < 0.2:
+            del_resp = await client.delete(url, headers=headers, timeout=10.0)
+            print(f"🗑️ Descartando falso positivo para {station_key} (Acumulado: {rain_accumulated} mm < 0.2 mm). Registro eliminado de Supabase.")
+            return
 
         update_payload = {
             "is_active": False,
@@ -286,7 +290,10 @@ async def process_telemetry_event(client: httpx.AsyncClient, event: dict):
         return
 
     # 2. DETECTAR INICIO DE LLUVIA
-    if not state.get('is_raining') and (rain_increment >= RAIN_START_THRESHOLD or rain_rate_mm_h > 0):
+    # Solo iniciar evento si hay incremento físico en el balancín (>= RAIN_START_THRESHOLD = 0.2mm)
+    # O si la tasa instantánea es significativa (>= 1.0 mm/h) para evitar fluctuaciones por condensación/viento
+    is_valid_start = (rain_increment >= RAIN_START_THRESHOLD) or (rain_rate_mm_h >= 1.0)
+    if not state.get('is_raining') and is_valid_start:
         print(f"\n🌧️  ¡LLUVIA DETECTADA en {station_name}!")
         print(f"   Incremento: {rain_increment:.2f} mm | Tasa instantánea: {rain_rate_mm_h:.2f} mm/h")
         print(f"   Valor anterior: {last_rain:.2f} mm -> Actual: {rain_daily:.2f} mm")
@@ -298,13 +305,14 @@ async def process_telemetry_event(client: httpx.AsyncClient, event: dict):
         state['last_update'] = current_time_iso
         state['max_intensity'] = current_intensity
 
+        initial_accumulated = float(rain_increment if rain_increment > 0 else 0.20)
         event_payload = {
             'station_key': station_key,
             'station_name': station_name,
             'event_start': current_time_iso,
             'is_active': True,
             'rain_at_start': float(last_rain),
-            'rain_accumulated': float(rain_increment if rain_increment > 0 else 0.10),
+            'rain_accumulated': initial_accumulated,
             'max_intensity': float(current_intensity),
             'updated_at': current_time_iso
         }

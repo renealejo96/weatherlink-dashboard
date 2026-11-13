@@ -209,6 +209,52 @@ h1, h2, h3, h4, h5, h6, .navbar-brand {
     overflow: hidden;
 }
 
+.metric-tile.clickable {
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+                background 0.25s ease,
+                border-color 0.25s ease,
+                box-shadow 0.25s ease;
+}
+
+.metric-tile.clickable:hover {
+    transform: translateY(-4px) scale(1.02);
+    background: rgba(255, 255, 255, 0.07);
+    border-color: var(--accent-color);
+    box-shadow: 0 8px 25px 0 var(--accent-glow);
+}
+
+.metric-tile.clickable:active {
+    transform: translateY(1px) scale(0.97);
+    transition: transform 0.08s ease;
+}
+
+.metric-tile.clickable .metric-click-hint {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 0.65rem;
+    color: var(--accent-color);
+    opacity: 0.4;
+    transition: all 0.25s ease;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.metric-tile.clickable:hover .metric-click-hint {
+    opacity: 1;
+    transform: scale(1.15);
+    background: var(--accent-color);
+    color: #0b0f19;
+    box-shadow: 0 0 10px var(--accent-color);
+}
+
 .metric-tile:hover {
     background: rgba(255, 255, 255, 0.06);
     border-color: var(--accent-color);
@@ -571,4 +617,74 @@ h1, h2, h3, h4, h5, h6, .navbar-brand {
     background: rgba(255, 255, 255, 0.01) !important;
     color: #64748b !important;
     border-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Glassmorphism Interactive Modal for Quick Metric Charts */
+.glass-modal .modal-content {
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 24px;
+    box-shadow: 0 25px 70px rgba(0, 0, 0, 0.75);
+    color: #f8fafc;
+}
+
+.glass-modal .modal-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.25rem 1.75rem;
+}
+
+.glass-modal .modal-footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1rem 1.75rem;
+}
+
+.stat-chip {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 14px;
+    padding: 12px 14px;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+.stat-chip:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+.stat-chip-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #94a3b8;
+    margin-bottom: 4px;
+}
+.stat-chip-value {
+    font-family: 'Outfit', sans-serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.range-pill-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #cbd5e1;
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+.range-pill-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.25);
+}
+.range-pill-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #0b0f19;
+    font-weight: 700;
+    box-shadow: 0 0 12px rgba(79, 172, 254, 0.4);
 }

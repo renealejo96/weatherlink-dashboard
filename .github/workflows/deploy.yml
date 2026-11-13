@@ -18,8 +18,14 @@ jobs:
           password: ${{ secrets.HOSTINGER_PASSWORD }}
           port: ${{ secrets.HOSTINGER_PORT }}
           script: |
-            # 1. Navegar al directorio del proyecto en Hostinger
-            cd /var/www/weatherlink
+            # 1. Navegar al directorio del proyecto en Hostinger (detecta /root o /var/www)
+            if [ -d "/root/weatherlink-dashboard" ]; then
+              cd /root/weatherlink-dashboard
+            elif [ -d "/var/www/weatherlink" ]; then
+              cd /var/www/weatherlink
+            else
+              echo "Directorio no encontrado" && exit 1
+            fi
             
             # 2. Descargar los últimos cambios desde GitHub
             git pull origin main

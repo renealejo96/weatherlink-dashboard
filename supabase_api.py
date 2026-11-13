@@ -141,9 +141,13 @@ class SupabaseAPI:
             return {'success': False, 'error': str(e)}
 
     def get_rain_events_history(self, station_key=None, limit=10):
-        """Obtiene historial de eventos de lluvia"""
+        """Obtiene historial de eventos de lluvia (filtrando eventos fantasma < 0.2 mm)"""
         try:
-            params = {'order': 'event_start.desc', 'limit': limit}
+            params = {
+                'order': 'event_start.desc',
+                'limit': limit,
+                'rain_accumulated': 'gte.0.2'
+            }
             if station_key:
                 params['station_key'] = f'eq.{station_key}'
             
