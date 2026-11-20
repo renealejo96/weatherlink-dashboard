@@ -140,13 +140,13 @@ class SupabaseAPI:
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
-    def get_rain_events_history(self, station_key=None, limit=10):
-        """Obtiene historial de eventos de lluvia (filtrando eventos fantasma < 0.2 mm)"""
+    def get_rain_events_history(self, station_key=None, limit=50):
+        """Obtiene historial de eventos de lluvia (incluye activos y acumulados >= 0.1 mm)"""
         try:
             params = {
                 'order': 'event_start.desc',
                 'limit': limit,
-                'rain_accumulated': 'gte.0.2'
+                'or': '(rain_accumulated.gte.0.1,is_active.eq.true)'
             }
             if station_key:
                 params['station_key'] = f'eq.{station_key}'
@@ -159,9 +159,12 @@ class SupabaseAPI:
             return {'success': False, 'error': str(e)}
 
     def get_accumulated_rain(self):
-        """Obtiene la lluvia acumulada por día y semana"""
+        """Obtiene la lluvia acumulada por día y semana en hora local de Ecuador (UTC-5)"""
         try:
-            eight_weeks_ago = (datetime.now() - timedelta(weeks=8)).isoformat()
+            from datetime import timezone
+            ecuador_tz = timezone(timedelta(hours=-5))
+            
+            eight_weeks_ago = (datetime.now(timezone.utc) - timedelta(weeks=8)).isoformat()
             params = {
                 'event_start': f'gte.{eight_weeks_ago}',
                 'order': 'event_start.desc',
@@ -175,15 +178,23 @@ class SupabaseAPI:
             by_day = defaultdict(lambda: defaultdict(float))
             
             for event in events:
-                rain = event.get('rain_accumulated', 0) or 0
-                event_start = datetime.fromisoformat(event['event_start'].replace('Z', '+00:00'))
+                rain = float(event.get('rain_accumulated', 0) or 0)
+                if rain <= 0:
+                    continue
                 
-                year, week, _ = event_start.isocalendar()
+                # Convertir a hora de Ecuador (UTC-5) para agrupar por el día calendario local real
+                start_raw = event['event_start'].replace('Z', '+00:00')
+                event_start = datetime.fromisoformat(start_raw)
+                if event_start.tzinfo is None:
+                    event_start = event_start.replace(tzinfo=timezone.utc)
+                event_start_local = event_start.astimezone(ecuador_tz)
+                
+                year, week, _ = event_start_local.isocalendar()
                 week_key = f"{year % 100:02d}-{week:02d}"
-                day_key = event_start.strftime('%Y-%m-%d')
+                day_key = event_start_local.strftime('%Y-%m-%d')
                 
-                by_week[event['station_key']][week_key] += rain
-                by_day[event['station_key']][day_key] += rain
+                by_week[event['station_key']][week_key] = round(by_week[event['station_key']][week_key] + rain, 2)
+                by_day[event['station_key']][day_key] = round(by_day[event['station_key']][day_key] + rain, 2)
             
             result = {
                 'by_week': {k: dict(v) for k, v in by_week.items()},

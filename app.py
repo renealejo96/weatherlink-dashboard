@@ -4,8 +4,9 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 from dotenv import load_dotenv
-# Cargar variables de entorno PRIMERO
-load_dotenv()
+# Cargar variables de entorno PRIMERO usando la ruta absoluta del archivo
+basedir = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(os.path.join(basedir, '.env'))
 
 from flask import Flask, render_template, request, jsonify, send_file
 import pytz
@@ -37,13 +38,12 @@ except (ImportError, ValueError) as e:
     SUPABASE_ENABLED = False
     supabase = None
 
-# Deshabilitar caché para HTML
+# Deshabilitar caché para HTML y estáticos (JS/CSS)
 @app.after_request
 def add_header(response):
-    if response.mimetype == 'text/html':
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
     return response
 
 # Configurar las 3 estaciones
@@ -77,19 +77,32 @@ for key, station in STATIONS.items():
         station['station_id']
     )
 
-# Sistema de caché simple (TTL: 5 minutos)
+# Sistema de caché inteligente con TTL dinámico según el rango de días
 CACHE = {}
-CACHE_TTL = 300  # segundos
+
+def get_cache_ttl(start_ts, end_ts):
+    """TTL más largo para rangos históricos amplios que cambian poco"""
+    days = (end_ts - start_ts) / 86400.0
+    if days >= 25:
+        return 7200   # 2 horas para consultas de ~30 días
+    elif days >= 10:
+        return 3600   # 1 hora para consultas de ~15 días
+    elif days >= 5:
+        return 1800   # 30 minutos para consultas de ~7 días
+    return 300        # 5 minutos para consultas de 24 horas
 
 def get_cache_key(station_key, start_ts, end_ts):
-    """Generar clave de caché"""
-    return f"{station_key}_{start_ts}_{end_ts}"
+    """Generar clave de caché redondeada a 5 minutos para maximizar cache hits"""
+    norm_start = (start_ts // 300) * 300
+    norm_end = (end_ts // 300) * 300
+    return f"{station_key}_{norm_start}_{norm_end}"
 
-def get_cached_data(cache_key):
+def get_cached_data(cache_key, start_ts, end_ts):
     """Obtener datos del caché si aún son válidos"""
     if cache_key in CACHE:
         cached_time, cached_data = CACHE[cache_key]
-        if time.time() - cached_time < CACHE_TTL:
+        ttl = get_cache_ttl(start_ts, end_ts)
+        if time.time() - cached_time < ttl:
             return cached_data
     return None
 
@@ -146,7 +159,7 @@ def get_historical_data(station_key):
         
         # Verificar caché
         cache_key = get_cache_key(station_key, start_timestamp, end_timestamp)
-        cached_data = get_cached_data(cache_key)
+        cached_data = get_cached_data(cache_key, start_timestamp, end_timestamp)
         
         if cached_data:
             cached_data['from_cache'] = True
@@ -411,3 +424,9 @@ def api_rain_accumulated():
         result['data']['stations'] = {key: STATIONS[key]['name'] for key in STATIONS}
         return jsonify(result)
     return jsonify(result), 500
+
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 5000))
+    print(f"🚀 Iniciando servidor local en http://localhost:{port}")
+    app.run(host='0.0.0.0', port=port, debug=True)

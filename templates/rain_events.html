@@ -121,9 +121,9 @@
             <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
                 <h4 class="m-0 fs-5 fw-bold text-light"><i class="fas fa-history text-primary me-2"></i> Registro Histórico de Eventos</h4>
                 <div class="station-filter">
-                    <button class="btn-outline-custom btn-sm active" onclick="filterByStation('all')">Todas</button>
+                    <button class="btn-outline-custom btn-sm active" onclick="filterByStation('all', this)">Todas</button>
                     {% for key, station in stations.items() %}
-                    <button class="btn-outline-custom btn-sm" onclick="filterByStation('{{ key }}')">{{ station.name }}</button>
+                    <button class="btn-outline-custom btn-sm" onclick="filterByStation('{{ key }}', this)">{{ station.name }}</button>
                     {% endfor %}
                 </div>
             </div>
@@ -164,13 +164,13 @@
         let dataTable = null;
 
         function formatDateTime(dateString) {
-            if (!dateString) return '-';
+            if (!dateString) return '<span class="text-white-50">-</span>';
             const date = new Date(dateString);
-            return `<strong>${date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</strong><br><small class="text-white-50">${date.toLocaleTimeString('es-ES')}</small>`;
+            return `<strong>${date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</strong><br><small class="text-white-50"><i class="far fa-clock me-1"></i>${date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</small>`;
         }
 
         function formatDuration(minutes) {
-            if (!minutes) return '-';
+            if (!minutes && minutes !== 0) return '-';
             const hours = Math.floor(minutes / 60);
             const mins = Math.floor(minutes % 60);
             const text = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
@@ -210,7 +210,7 @@
                                         <div class="col-12 mt-4">
                                             <div class="p-3 bg-white bg-opacity-5 rounded-3 border border-white border-opacity-10 text-center">
                                                 <p class="text-white-50 mb-1" style="font-size: 0.7rem; letter-spacing: 0.5px; text-transform: uppercase;">LLUVIA ACUMULADA</p>
-                                                <h2 class="display-6 fw-bold m-0" style="color: var(--color-rain);">${event.rain_accumulated.toFixed(2)} <span class="fs-5 text-light">mm</span></h2>
+                                                <h2 class="display-6 fw-bold m-0" style="color: var(--color-rain);">${(event.rain_accumulated || 0).toFixed(2)} <span class="fs-5 text-light">mm</span></h2>
                                             </div>
                                         </div>
                                     </div>
@@ -238,18 +238,24 @@
                 const data = await response.json();
                 const tbody = document.getElementById('events-tbody');
                 
-                if (dataTable) { dataTable.destroy(); }
-                
                 if (data.success && data.data.length > 0) {
+                    if (dataTable) { 
+                        dataTable.destroy(); 
+                        dataTable = null;
+                    }
+
                     let html = '';
                     data.data.forEach(event => {
                         const badge = event.is_active 
                             ? '<span class="badge-custom badge-active"><i class="fas fa-circle-notch fa-spin"></i> Activo</span>'
                             : '<span class="badge-custom badge-finished"><i class="fas fa-check"></i> Finalizado</span>';
                         
+                        const startTs = event.event_start ? new Date(event.event_start).getTime() : 0;
+                        const endTs = event.event_end ? new Date(event.event_end).getTime() : 0;
+                        
                         html += `
                             <tr>
-                                <td><span class="text-white-50 fw-bold">#${event.id}</span></td>
+                                <td data-order="${event.id}"><span class="text-white-50 fw-bold">#${event.id}</span></td>
                                 <td>
                                     <div class="d-flex align-items-center">
                                         <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"><i class="fas fa-leaf" style="font-size: 0.85rem;"></i></div>
@@ -259,26 +265,33 @@
                                         </div>
                                     </div>
                                 </td>
-                                <td>${formatDateTime(event.event_start)}</td>
-                                <td>${formatDateTime(event.event_end)}</td>
-                                <td>${formatDuration(event.duration_minutes)}</td>
-                                <td><span class="fs-5 fw-bold text-primary">${event.rain_accumulated ? event.rain_accumulated.toFixed(2) : '0.00'}</span></td>
-                                <td><span class="text-light fw-semibold">${event.max_intensity ? event.max_intensity.toFixed(2) : '0.00'}</span></td>
-                                <td>${badge}</td>
+                                <td data-order="${startTs}">${formatDateTime(event.event_start)}</td>
+                                <td data-order="${endTs}">${formatDateTime(event.event_end)}</td>
+                                <td data-order="${event.duration_minutes || 0}">${formatDuration(event.duration_minutes)}</td>
+                                <td data-order="${event.rain_accumulated || 0}"><span class="fs-5 fw-bold text-primary">${event.rain_accumulated ? event.rain_accumulated.toFixed(2) : '0.00'}</span></td>
+                                <td data-order="${event.max_intensity || 0}"><span class="text-light fw-semibold">${event.max_intensity ? event.max_intensity.toFixed(2) : '0.00'}</span></td>
+                                <td data-order="${event.is_active ? 1 : 0}">${badge}</td>
                             </tr>
                         `;
                     });
                     tbody.innerHTML = html;
                     
-                    // Inicializar DataTables
+                    // Inicializar DataTables con orden numérico/temporal descendente
                     dataTable = $('#eventsDataTable').DataTable({
                         responsive: true,
                         language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-                        order: [[0, 'desc']],
+                        order: [[2, 'desc']], // Ordenar por Fecha de Inicio descendente (más reciente primero)
                         pageLength: 10,
+                        columnDefs: [
+                            { targets: [0, 2, 3, 4, 5, 6, 7], type: 'num' }
+                        ],
                         dom: '<"row align-items-center mb-3"<"col-md-6"l><"col-md-6"f>>rt<"row align-items-center mt-3"<"col-md-6"i><"col-md-6"p>>'
                     });
                 } else {
+                    if (dataTable) {
+                        dataTable.destroy();
+                        dataTable = null;
+                    }
                     tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><i class="fas fa-folder-open text-white-50 fs-2 mb-2 d-block"></i> No hay registros en el historial</td></tr>';
                 }
             } catch (error) { console.error(error); }
@@ -292,7 +305,10 @@
                 
                 const accumulated = data.data;
                 const stationKeys = Object.keys(accumulated.stations || {});
-                const today = new Date().toISOString().split('T')[0];
+                
+                // Fecha de hoy en hora local (Ecuador)
+                const now = new Date();
+                const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                 
                 // Semanas
                 const weekData = accumulated.by_week || {};
@@ -301,7 +317,7 @@
                 const sortedWeeks = Array.from(allWeeks).sort().reverse().slice(0, 5);
                 
                 let weekHtml = '';
-                if (sortedWeeks.length === 0) weekHtml = '<tr><td colspan="100" class="text-center">Sin datos acumulados</td></tr>';
+                if (sortedWeeks.length === 0) weekHtml = '<tr><td colspan="100" class="text-center py-3 text-white-50">Sin datos acumulados</td></tr>';
                 else {
                     sortedWeeks.forEach(week => {
                         let rowTotal = 0; let cells = '';
@@ -315,37 +331,43 @@
                 }
                 document.getElementById('week-tbody').innerHTML = weekHtml;
 
-                // Días
+                // Días continuos: generar últimos 7 días calendario continuos
                 const dayData = accumulated.by_day || {};
-                const allDays = new Set();
-                Object.values(dayData).forEach(st => Object.keys(st).forEach(d => allDays.add(d)));
-                const sortedDays = Array.from(allDays).sort().reverse().slice(0, 7);
+                const continuousDays = [];
+                for (let i = 0; i < 7; i++) {
+                    const d = new Date();
+                    d.setDate(d.getDate() - i);
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const dayNum = String(d.getDate()).padStart(2, '0');
+                    continuousDays.push(`${y}-${m}-${dayNum}`);
+                }
                 
                 let dayHtml = '';
-                if (sortedDays.length === 0) dayHtml = '<tr><td colspan="100" class="text-center">Sin datos acumulados</td></tr>';
-                else {
-                    sortedDays.forEach(day => {
-                        let rowTotal = 0; let cells = '';
-                        stationKeys.forEach(stationKey => {
-                            const val = (dayData[stationKey] && dayData[stationKey][day]) || 0;
-                            rowTotal += val;
-                            cells += `<td class="text-center"><span class="${val > 0 ? 'badge bg-info bg-opacity-15 text-white fs-6 border border-info border-opacity-30 px-2.5 py-1.5' : 'text-white-50'}">${val > 0 ? val.toFixed(2) + ' mm' : '-'}</span></td>`;
-                        });
-                        const isToday = day === today;
-                        const dateLabel = new Date(day + 'T00:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
-                        
-                        dayHtml += `<tr class="${isToday ? 'bg-warning bg-opacity-10' : ''}"><td><span class="fw-bold text-light"><i class="fas fa-calendar-day text-white-50 me-2"></i>${dateLabel} ${isToday ? '<span class="badge bg-warning ms-1 text-dark">Hoy</span>' : ''}</span></td>${cells}<td class="text-center bg-white bg-opacity-5 rounded-end"><strong class="text-success fs-5">${rowTotal > 0 ? rowTotal.toFixed(2) + ' mm' : '-'}</strong></td></tr>`;
+                continuousDays.forEach(day => {
+                    let rowTotal = 0; 
+                    let cells = '';
+                    stationKeys.forEach(stationKey => {
+                        const val = (dayData[stationKey] && dayData[stationKey][day]) || 0;
+                        rowTotal += val;
+                        cells += `<td class="text-center"><span class="${val > 0 ? 'badge bg-info bg-opacity-15 text-white fs-6 border border-info border-opacity-30 px-2.5 py-1.5' : 'text-white-50'}">${val > 0 ? val.toFixed(2) + ' mm' : '-'}</span></td>`;
                     });
-                }
+                    const isToday = day === today;
+                    const dateParts = day.split('-');
+                    const dateObj = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
+                    const dateLabel = dateObj.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short' });
+                    
+                    dayHtml += `<tr class="${isToday ? 'bg-warning bg-opacity-10' : ''}"><td><span class="fw-bold text-light"><i class="fas fa-calendar-day text-white-50 me-2"></i>${dateLabel} ${isToday ? '<span class="badge bg-warning ms-1 text-dark">Hoy</span>' : ''}</span></td>${cells}<td class="text-center bg-white bg-opacity-5 rounded-end"><strong class="text-success fs-5">${rowTotal > 0 ? rowTotal.toFixed(2) + ' mm' : '-'}</strong></td></tr>`;
+                });
                 document.getElementById('day-tbody').innerHTML = dayHtml;
                 
             } catch (error) { console.error(error); }
         }
 
-        function filterByStation(station) {
+        function filterByStation(station, btn) {
             currentFilter = station;
-            document.querySelectorAll('.station-filter button').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
+            document.querySelectorAll('.station-filter button').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
             loadEventsHistory();
         }
 
@@ -356,6 +378,7 @@
         setInterval(() => {
             loadActiveEvents();
             loadAccumulatedRain();
+            loadEventsHistory();
         }, 30000);
     </script>
 </body>

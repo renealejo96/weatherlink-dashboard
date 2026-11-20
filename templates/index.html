@@ -14,13 +14,14 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Chart.js & Date-Fns -->
+    <!-- Chart.js & Plugins -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/date-fns@3.0.0/cdn.min.js"></script>
 
     <!-- Custom Stylesheet & Chart Theme -->
     <link rel="stylesheet" href="/static/css/theme.css">
-    <script src="/static/js/chart-theme.js"></script>
+    <script src="/static/js/chart-theme.js?v=3.2"></script>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-custom mb-5">
@@ -91,6 +92,9 @@
                         </div>
                     </div>
                     <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2.5 text-white-50" style="font-size: 0.8rem; border-color: rgba(255,255,255,0.15);" onclick="resetChartZoom(modalChartInstance)" title="Arrastra para hacer zoom o haz clic aquí para restablecer">
+                            <i class="fas fa-search-minus me-1"></i> Reset Zoom
+                        </button>
                         <span class="badge bg-primary bg-opacity-20 border border-primary border-opacity-30 text-white px-3 py-2 fs-6" id="modalCurrentBadge">-</span>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
@@ -136,11 +140,18 @@
                         </div>
                     </div>
 
-                    <!-- Canvas del Gráfico & Loading -->
+                    <!-- Canvas del Gráfico & Loading & Empty State -->
                     <div style="position: relative; height: 320px; width: 100%;">
                         <div id="modalLoading" class="position-absolute top-50 start-50 translate-middle text-center" style="display: none; z-index: 10;">
                             <div class="spinner-border text-primary" role="status"></div>
                             <p class="text-white-50 mt-2 small">Cargando datos históricos...</p>
+                        </div>
+                        <div id="modalEmptyState" class="position-absolute top-50 start-50 translate-middle text-center" style="display: none; z-index: 5;">
+                            <div class="p-3 rounded-circle mb-3 d-inline-flex align-items-center justify-content-center" style="background: rgba(245, 158, 11, 0.1); width: 64px; height: 64px;">
+                                <i class="fas fa-sun fs-2 text-warning"></i>
+                            </div>
+                            <h5 class="fw-bold text-white mb-1">Sin Precipitaciones</h5>
+                            <p class="text-white-50 small mb-0">No se registraron lluvias para esta estación en el período seleccionado.</p>
                         </div>
                         <canvas id="modalChartCanvas"></canvas>
                     </div>
@@ -161,6 +172,16 @@
     <script>
         const stationsMeta = {{ stations | tojson }};
         const stationKeys = Object.keys(stationsMeta);
+
+        // Fallback defensivo ante caché local del navegador
+        if (typeof formatLevel1Label === 'undefined') {
+            window.formatLevel1Label = function(dateInput, isDaily = false) {
+                const d = new Date(typeof dateInput === 'number' ? (dateInput < 1e11 ? dateInput * 1000 : dateInput) : dateInput);
+                if (isNaN(d.getTime())) return String(dateInput);
+                if (isDaily) return d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short' });
+                return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            };
+        }
 
         // Estado del Modal de Gráficas
         let currentModalStation = null;
@@ -304,37 +325,8 @@
         function renderModalChart(records, metricType) {
             const config = METRIC_CONFIG[metricType] || METRIC_CONFIG.temperature;
             const canvas = document.getElementById('modalChartCanvas');
+            const emptyState = document.getElementById('modalEmptyState');
             const ctx = canvas.getContext('2d');
-
-            // Extraer y procesar valores
-            const validRecords = [];
-            records.forEach(r => {
-                const val = config.calc(r);
-                if (val !== null && val !== undefined && !isNaN(val)) {
-                    validRecords.push({
-                        timestamp: r.timestamp,
-                        value: val
-                    });
-                }
-            });
-
-            // Actualizar chips de estadísticas
-            if (validRecords.length > 0) {
-                const values = validRecords.map(d => d.value);
-                const maxVal = Math.max(...values);
-                const minVal = Math.min(...values);
-                const avgVal = values.reduce((a, b) => a + b, 0) / values.length;
-
-                document.getElementById('statMax').textContent = `${maxVal.toFixed(config.decimals)} ${config.unit}`;
-                document.getElementById('statMin').textContent = `${minVal.toFixed(config.decimals)} ${config.unit}`;
-                document.getElementById('statAvg').textContent = `${avgVal.toFixed(config.decimals)} ${config.unit}`;
-                document.getElementById('statCount').textContent = validRecords.length.toLocaleString('es-ES');
-            } else {
-                document.getElementById('statMax').textContent = '-';
-                document.getElementById('statMin').textContent = '-';
-                document.getElementById('statAvg').textContent = '-';
-                document.getElementById('statCount').textContent = '0';
-            }
 
             // Destruir gráfico anterior si existe
             if (modalChartInstance) {
@@ -342,13 +334,103 @@
                 modalChartInstance = null;
             }
 
-            const labels = validRecords.map(r => new Date(r.timestamp * 1000).toLocaleString('es-ES', {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            }));
-            const datasetValues = validRecords.map(r => r.value);
+            let labels = [];
+            let datasetValues = [];
+
+            // Manejo especial inteligente para lluvia: no mostrar ceros innecesarios ni barras milimétricas
+            if (metricType === 'rain') {
+                if (currentModalDays > 1) {
+                    // Agrupar lluvia por día calendario, considerando solo días con precipitación efectiva
+                    const dayMap = {};
+                    records.forEach(r => {
+                        const val = config.calc(r) || 0;
+                        if (val > 0) {
+                            const d = new Date(r.timestamp * 1000);
+                            const dayKey = d.toISOString().split('T')[0];
+                            if (!dayMap[dayKey]) {
+                                dayMap[dayKey] = { total: 0, ts: r.timestamp };
+                            }
+                            dayMap[dayKey].total += val;
+                        }
+                    });
+
+                    const sortedDayKeys = Object.keys(dayMap).sort();
+                    rawDates = sortedDayKeys.map(k => dayMap[k].ts);
+                    labels = rawDates.map(ts => formatLevel1Label(ts, true));
+                    datasetValues = sortedDayKeys.map(k => Math.round(dayMap[k].total * 100) / 100);
+                } else {
+                    // 24 horas: mostrar únicamente los intervalos donde efectivamente hubo lluvia
+                    const rainRecords = records
+                        .map(r => ({
+                            timestamp: r.timestamp,
+                            value: config.calc(r) || 0
+                        }))
+                        .filter(d => d.value > 0);
+
+                    rawDates = rainRecords.map(d => d.timestamp);
+                    labels = rawDates.map(ts => formatLevel1Label(ts, false));
+                    datasetValues = rainRecords.map(d => Math.round(d.value * 100) / 100);
+                }
+
+                const totalRain = datasetValues.reduce((a, b) => a + b, 0);
+
+                if (datasetValues.length === 0 || totalRain <= 0) {
+                    canvas.style.display = 'none';
+                    if (emptyState) emptyState.style.display = 'block';
+                    document.getElementById('statMax').textContent = '0.0 mm';
+                    document.getElementById('statMin').textContent = '0.0 mm';
+                    document.getElementById('statAvg').textContent = '0.0 mm';
+                    document.getElementById('statCount').textContent = '0';
+                    return;
+                } else {
+                    canvas.style.display = 'block';
+                    if (emptyState) emptyState.style.display = 'none';
+
+                    const maxRain = Math.max(...datasetValues);
+                    const minRain = Math.min(...datasetValues);
+                    document.getElementById('statMax').textContent = `${maxRain.toFixed(1)} mm`;
+                    document.getElementById('statMin').textContent = `${minRain.toFixed(1)} mm`;
+                    document.getElementById('statAvg').textContent = `${totalRain.toFixed(1)} mm (Total)`;
+                    document.getElementById('statCount').textContent = `${datasetValues.length} ${currentModalDays > 1 ? 'días' : 'lecturas'}`;
+                }
+            } else {
+                // Resto de métricas continuas (temperatura, humedad, etc.)
+                if (emptyState) emptyState.style.display = 'none';
+                canvas.style.display = 'block';
+
+                const validRecords = [];
+                records.forEach(r => {
+                    const val = config.calc(r);
+                    if (val !== null && val !== undefined && !isNaN(val)) {
+                        validRecords.push({
+                            timestamp: r.timestamp,
+                            value: val
+                        });
+                    }
+                });
+
+                if (validRecords.length > 0) {
+                    const values = validRecords.map(d => d.value);
+                    const maxVal = Math.max(...values);
+                    const minVal = Math.min(...values);
+                    const avgVal = values.reduce((a, b) => a + b, 0) / values.length;
+
+                    document.getElementById('statMax').textContent = `${maxVal.toFixed(config.decimals)} ${config.unit}`;
+                    document.getElementById('statMin').textContent = `${minVal.toFixed(config.decimals)} ${config.unit}`;
+                    document.getElementById('statAvg').textContent = `${avgVal.toFixed(config.decimals)} ${config.unit}`;
+                    document.getElementById('statCount').textContent = validRecords.length.toLocaleString('es-ES');
+                } else {
+                    document.getElementById('statMax').textContent = '-';
+                    document.getElementById('statMin').textContent = '-';
+                    document.getElementById('statAvg').textContent = '-';
+                    document.getElementById('statCount').textContent = '0';
+                }
+
+                // Generar etiquetas de Nivel 1 (rotadas 90°) y pasar fechas para Nivel 2 (Semanas)
+                rawDates = validRecords.map(r => r.timestamp);
+                labels = rawDates.map(ts => formatLevel1Label(ts, false));
+                datasetValues = validRecords.map(r => r.value);
+            }
 
             // Crear gradiente elegante
             const gradient = ctx.createLinearGradient(0, 0, 0, 300);
@@ -362,12 +444,13 @@
                 type: isBar ? 'bar' : 'line',
                 data: {
                     labels: labels,
+                    _dates: rawDates,
                     datasets: [{
                         label: `${config.title} (${config.unit})`,
                         data: datasetValues,
                         borderColor: config.color,
-                        backgroundColor: isBar ? config.color + '88' : gradient,
-                        borderWidth: isBar ? 1 : 2.5,
+                        backgroundColor: isBar ? config.color + 'cc' : gradient,
+                        borderWidth: isBar ? 1.5 : 2.5,
                         fill: !isBar,
                         tension: 0.35,
                         pointRadius: datasetValues.length > 80 ? 0 : 2.5,
@@ -375,7 +458,8 @@
                         pointBackgroundColor: config.color,
                         pointBorderColor: '#0b0f19',
                         pointBorderWidth: 2,
-                        borderRadius: isBar ? 4 : 0
+                        borderRadius: isBar ? 6 : 0,
+                        maxBarThickness: isBar ? 38 : undefined
                     }]
                 },
                 options: {
@@ -387,8 +471,13 @@
                     },
                     plugins: {
                         legend: { display: false },
+                        zoom: ChartTheme.getZoomConfig(),
                         tooltip: {
                             callbacks: {
+                                title: function(context) {
+                                    const raw = context[0].label;
+                                    return Array.isArray(raw) ? raw.join(' • ') : raw;
+                                },
                                 label: function(context) {
                                     return ` ${config.title}: ${context.parsed.y.toFixed(config.decimals)} ${config.unit}`;
                                 }
@@ -396,11 +485,14 @@
                         }
                     },
                     scales: {
-                        x: ChartTheme.getAxisConfig('Fecha y Hora'),
+                        x: ChartTheme.getAxisConfig(metricType === 'rain' && currentModalDays > 1 ? 'Días con Lluvia' : 'Fecha y Hora (con Semana ISO)'),
                         y: ChartTheme.getAxisConfig(`${config.title} (${config.unit})`, isBar)
                     }
                 }
             });
+
+            // Habilitar restablecer zoom con doble clic en el lienzo
+            ChartTheme.enableCanvasReset(canvas, () => modalChartInstance);
         }
 
         // Cargar datos actuales de cada estación

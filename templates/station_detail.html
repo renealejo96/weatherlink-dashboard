@@ -13,13 +13,14 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Chart.js -->
+    <!-- Chart.js & Plugins -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/date-fns@3.0.0/cdn.min.js"></script>
     
     <!-- Custom Theme Styling & Chart Defaults -->
     <link rel="stylesheet" href="/static/css/theme.css">
-    <script src="/static/js/chart-theme.js"></script>
+    <script src="/static/js/chart-theme.js?v=3.2"></script>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-custom mb-5">
@@ -88,7 +89,10 @@
         <div class="row g-4">
             <div class="col-md-6">
                 <div class="glass-card p-4" style="height: 380px;">
-                    <h5 class="fs-6 fw-bold text-light mb-3"><i class="fas fa-thermometer-half text-danger me-2"></i> Temperatura</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fs-6 fw-bold text-light m-0"><i class="fas fa-thermometer-half text-danger me-2"></i> Temperatura</h5>
+                        <button class="btn btn-sm btn-outline-secondary py-0 px-2 text-white-50" style="font-size: 0.75rem; border-color: rgba(255,255,255,0.15);" onclick="resetChartZoom(charts.temp)" title="Restablecer nivel de zoom"><i class="fas fa-undo me-1"></i>Reset</button>
+                    </div>
                     <div style="position: relative; height: 300px; width: 100%;">
                         <canvas id="tempChart"></canvas>
                     </div>
@@ -96,7 +100,10 @@
             </div>
             <div class="col-md-6">
                 <div class="glass-card p-4" style="height: 380px;">
-                    <h5 class="fs-6 fw-bold text-light mb-3"><i class="fas fa-tint text-primary me-2"></i> Humedad</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fs-6 fw-bold text-light m-0"><i class="fas fa-tint text-primary me-2"></i> Humedad</h5>
+                        <button class="btn btn-sm btn-outline-secondary py-0 px-2 text-white-50" style="font-size: 0.75rem; border-color: rgba(255,255,255,0.15);" onclick="resetChartZoom(charts.humidity)" title="Restablecer nivel de zoom"><i class="fas fa-undo me-1"></i>Reset</button>
+                    </div>
                     <div style="position: relative; height: 300px; width: 100%;">
                         <canvas id="humidityChart"></canvas>
                     </div>
@@ -107,7 +114,10 @@
         <div class="row g-4 mt-1">
             <div class="col-md-6">
                 <div class="glass-card p-4" style="height: 380px;">
-                    <h5 class="fs-6 fw-bold text-light mb-3"><i class="fas fa-wind text-info me-2"></i> Velocidad del Viento</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fs-6 fw-bold text-light m-0"><i class="fas fa-wind text-info me-2"></i> Velocidad del Viento</h5>
+                        <button class="btn btn-sm btn-outline-secondary py-0 px-2 text-white-50" style="font-size: 0.75rem; border-color: rgba(255,255,255,0.15);" onclick="resetChartZoom(charts.wind)" title="Restablecer nivel de zoom"><i class="fas fa-undo me-1"></i>Reset</button>
+                    </div>
                     <div style="position: relative; height: 300px; width: 100%;">
                         <canvas id="windChart"></canvas>
                     </div>
@@ -115,8 +125,18 @@
             </div>
             <div class="col-md-6">
                 <div class="glass-card p-4" style="height: 380px;">
-                    <h5 class="fs-6 fw-bold text-light mb-3"><i class="fas fa-cloud-rain text-secondary me-2"></i> Precipitación</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fs-6 fw-bold text-light m-0"><i class="fas fa-cloud-rain text-secondary me-2"></i> Precipitación</h5>
+                        <button class="btn btn-sm btn-outline-secondary py-0 px-2 text-white-50" style="font-size: 0.75rem; border-color: rgba(255,255,255,0.15);" onclick="resetChartZoom(charts.rain)" title="Restablecer nivel de zoom"><i class="fas fa-undo me-1"></i>Reset</button>
+                    </div>
                     <div style="position: relative; height: 300px; width: 100%;">
+                        <div id="rainEmptyState" class="position-absolute top-50 start-50 translate-middle text-center" style="display: none; z-index: 5;">
+                            <div class="p-3 rounded-circle mb-3 d-inline-flex align-items-center justify-content-center" style="background: rgba(245, 158, 11, 0.1); width: 56px; height: 56px;">
+                                <i class="fas fa-sun fs-3 text-warning"></i>
+                            </div>
+                            <h6 class="fw-bold text-white mb-1">Sin Precipitaciones</h6>
+                            <p class="text-white-50 small mb-0">No se registraron lluvias en el período seleccionado.</p>
+                        </div>
                         <canvas id="rainChart"></canvas>
                     </div>
                 </div>
@@ -126,7 +146,10 @@
         <div class="row g-4 mt-1 mb-5">
             <div class="col-md-6">
                 <div class="glass-card p-4" style="height: 380px;">
-                    <h5 class="fs-6 fw-bold text-light mb-3"><i class="fas fa-sun text-warning me-2"></i> Radiación Solar</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fs-6 fw-bold text-light m-0"><i class="fas fa-sun text-warning me-2"></i> Radiación Solar</h5>
+                        <button class="btn btn-sm btn-outline-secondary py-0 px-2 text-white-50" style="font-size: 0.75rem; border-color: rgba(255,255,255,0.15);" onclick="resetChartZoom(charts.solar)" title="Restablecer nivel de zoom"><i class="fas fa-undo me-1"></i>Reset</button>
+                    </div>
                     <div style="position: relative; height: 300px; width: 100%;">
                         <canvas id="solarChart"></canvas>
                     </div>
@@ -134,7 +157,10 @@
             </div>
             <div class="col-md-6">
                 <div class="glass-card p-4" style="height: 380px;">
-                    <h5 class="fs-6 fw-bold text-light mb-3"><i class="fas fa-chart-line text-success me-2"></i> DPV (Déficit de Presión de Vapor)</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fs-6 fw-bold text-light m-0"><i class="fas fa-chart-line text-success me-2"></i> DPV (Déficit de Presión de Vapor)</h5>
+                        <button class="btn btn-sm btn-outline-secondary py-0 px-2 text-white-50" style="font-size: 0.75rem; border-color: rgba(255,255,255,0.15);" onclick="resetChartZoom(charts.pressure)" title="Restablecer nivel de zoom"><i class="fas fa-undo me-1"></i>Reset</button>
+                    </div>
                     <div style="position: relative; height: 300px; width: 100%;">
                         <canvas id="pressureChart"></canvas>
                     </div>
@@ -145,6 +171,16 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Fallback defensivo ante caché local del navegador
+        if (typeof formatLevel1Label === 'undefined') {
+            window.formatLevel1Label = function(dateInput, isDaily = false) {
+                const d = new Date(typeof dateInput === 'number' ? (dateInput < 1e11 ? dateInput * 1000 : dateInput) : dateInput);
+                if (isNaN(d.getTime())) return String(dateInput);
+                if (isDaily) return d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short' });
+                return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            };
+        }
+
         const stationKey = '{{ station_key }}';
         let charts = {};
 
@@ -181,10 +217,19 @@
                         legend: {
                             display: true,
                             position: 'top'
+                        },
+                        zoom: ChartTheme.getZoomConfig(),
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    const raw = context[0].label;
+                                    return Array.isArray(raw) ? raw.join(' • ') : raw;
+                                }
+                            }
                         }
                     },
                     scales: {
-                        x: ChartTheme.getAxisConfig('Fecha/Hora'),
+                        x: ChartTheme.getAxisConfig('Fecha y Hora (con Semana ISO)'),
                         y: ChartTheme.getAxisConfig(label)
                     }
                 }
@@ -204,20 +249,30 @@
                 datasets: [{
                     label: 'Lluvia (mm)',
                     data: [],
-                    backgroundColor: '#8b5cf699',
+                    backgroundColor: '#8b5cf6cc',
                     borderColor: '#8b5cf6',
-                    borderWidth: 1,
-                    borderRadius: 4
+                    borderWidth: 1.5,
+                    borderRadius: 6,
+                    maxBarThickness: 38
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: true, position: 'top' }
+                    legend: { display: true, position: 'top' },
+                    zoom: ChartTheme.getZoomConfig(),
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                const raw = context[0].label;
+                                return Array.isArray(raw) ? raw.join(' • ') : raw;
+                            }
+                        }
+                    }
                 },
                 scales: {
-                    x: ChartTheme.getAxisConfig('Fecha/Hora'),
+                    x: ChartTheme.getAxisConfig('Días con Lluvia (con Semana ISO)'),
                     y: ChartTheme.getAxisConfig('Lluvia (mm)', true)
                 }
             }
@@ -225,6 +280,13 @@
         
         charts.solar = createChart(document.getElementById('solarChart'), 'Radiación Solar (W/m²)', '#f59e0b');
         charts.pressure = createChart(document.getElementById('pressureChart'), 'DPV (kPa)', '#10b981');
+
+        // Habilitar doble clic para restablecer zoom en todos los lienzos
+        ['tempChart', 'humidityChart', 'windChart', 'rainChart', 'solarChart', 'pressureChart'].forEach(id => {
+            const canvasEl = document.getElementById(id);
+            const key = id.replace('Chart', '');
+            ChartTheme.enableCanvasReset(canvasEl, () => charts[key]);
+        });
 
         // Mostrar/ocultar selectores de fecha
         document.getElementById('quickRange').addEventListener('change', function() {
@@ -272,14 +334,10 @@
                 }
 
                 const records = data.records || [];
+                const timestamps = records.map(r => r.timestamp);
                 
-                // Preparar datos para gráficos
-                const labels = records.map(r => new Date(r.timestamp * 1000).toLocaleString('es-ES', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                }));
+                // Preparar datos para Nivel 1 (mediciones rotadas a 90 grados)
+                const labels = timestamps.map(ts => formatLevel1Label(ts, false));
                 
                 // Convertir unidades a métricas
                 const tempC = records.map(r => r.temperature ? ((r.temperature - 32) * 5 / 9) : null);
@@ -295,24 +353,54 @@
                     return null;
                 });
                 
-                // Filtrar solo días con lluvia para el gráfico de precipitación
-                const rainData = records
-                    .map((r, idx) => ({
-                        label: labels[idx],
-                        value: rainMm[idx]
-                    }))
-                    .filter(d => d.value > 0);
+                // Manejo inteligente de lluvia: mostrar únicamente cuando efectivamente haya lluvia
+                let rainLabels = [];
+                let rainValues = [];
+                let rainChartDates = [];
+                const rainEmptyState = document.getElementById('rainEmptyState');
+                const rainCanvas = document.getElementById('rainChart');
+
+                if (quickRange !== '1') {
+                    // Agrupar por día calendario considerando solo días con lluvia > 0
+                    const dayMap = {};
+                    records.forEach(r => {
+                        const val = (r.rain_mm ?? r.rain ?? 0);
+                        if (val > 0) {
+                            const date = new Date(r.timestamp * 1000);
+                            const dayIso = date.toISOString().slice(0, 10);
+                            if (!dayMap[dayIso]) {
+                                dayMap[dayIso] = { date: date, total: 0, ts: r.timestamp };
+                            }
+                            dayMap[dayIso].total += val;
+                        }
+                    });
+                    const sortedDays = Object.keys(dayMap).sort();
+                    rainChartDates = sortedDays.map(k => dayMap[k].ts);
+                    rainLabels = rainChartDates.map(ts => formatLevel1Label(ts, true));
+                    rainValues = sortedDays.map(k => Math.round(dayMap[k].total * 100) / 100);
+                } else {
+                    // 1 día: mostrar solo lecturas con lluvia efectiva
+                    const rainData = records.filter(r => (r.rain_mm ?? r.rain ?? 0) > 0);
+                    rainChartDates = rainData.map(r => r.timestamp);
+                    rainLabels = rainChartDates.map(ts => formatLevel1Label(ts, false));
+                    rainValues = rainData.map(r => Math.round((r.rain_mm ?? r.rain ?? 0) * 100) / 100);
+                }
+
+                if (rainValues.length === 0) {
+                    rainCanvas.style.display = 'none';
+                    if (rainEmptyState) rainEmptyState.style.display = 'block';
+                } else {
+                    rainCanvas.style.display = 'block';
+                    if (rainEmptyState) rainEmptyState.style.display = 'none';
+                }
                 
-                const rainLabels = rainData.map(d => d.label);
-                const rainValues = rainData.map(d => d.value);
-                
-                // Actualizar cada gráfico
-                updateChart(charts.temp, labels, tempC);
-                updateChart(charts.humidity, labels, records.map(r => r.humidity));
-                updateChart(charts.wind, labels, windKmh);
-                updateChart(charts.rain, rainLabels, rainValues);
-                updateChart(charts.solar, labels, records.map(r => r.solar_radiation));
-                updateChart(charts.pressure, labels, vpd);
+                // Actualizar cada gráfico con sus etiquetas de Nivel 1 y fechas para Nivel 2
+                updateChart(charts.temp, labels, tempC, timestamps);
+                updateChart(charts.humidity, labels, records.map(r => r.humidity), timestamps);
+                updateChart(charts.wind, labels, windKmh, timestamps);
+                updateChart(charts.rain, rainLabels, rainValues, rainChartDates);
+                updateChart(charts.solar, labels, records.map(r => r.solar_radiation), timestamps);
+                updateChart(charts.pressure, labels, vpd, timestamps);
 
                 // Ocultar indicador de carga
                 document.getElementById('loadingIndicator').style.display = 'none';
@@ -323,8 +411,9 @@
             }
         }
 
-        function updateChart(chart, labels, data) {
+        function updateChart(chart, labels, data, dates = null) {
             chart.data.labels = labels;
+            if (dates) chart.data._dates = dates;
             chart.data.datasets[0].data = data;
             const dataset = chart.data.datasets[0];
             if (chart.config.type === 'line' && dataset.borderColor) {
